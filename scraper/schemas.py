@@ -149,3 +149,65 @@ class ProductData(BaseModel):
     @classmethod
     def validate_currency(cls, v):
         return v.upper()
+
+class WomensDressData(BaseModel):
+    platform: str = "nordstrom"
+    platform_id: Optional[int] = None
+    url: str
+    title: str
+    brand: Optional[str] = None
+    description: Optional[str] = None
+    category: str = "womens_dresses"
+    gender: str = "women"
+    currency: str = "USD"
+
+    stock_price_json: Optional[str] = None
+    attributes_json: Optional[str] = None
+    review_json: Optional[str] = None
+    raw_product_json: Optional[str] = None
+    json_file_path: Optional[str] = None
+
+    data_label: str = "demonstration_data"
+    poc_run_id: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_keys(cls, values: Any):
+        if not isinstance(values, dict):
+            return values
+        data = dict(values)
+        data.setdefault("platform", "nordstrom")
+        data.setdefault("category", "womens_dresses")
+        data.setdefault("gender", "women")
+        data.setdefault("currency", "USD")
+        return data
+
+    @field_validator("platform")
+    @classmethod
+    def validate_platform(cls, v):
+        v = v.lower()
+        if v != "nordstrom":
+            raise ValueError("Platform must be nordstrom")
+        return v
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, v):
+        v = v.lower()
+        if v != "women":
+            raise ValueError("Gender must be women")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v):
+        v = v.lower()
+        if v != "womens_dresses":
+            raise ValueError("Category must be womens_dresses")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v):
+        return v.upper()
+

@@ -66,3 +66,36 @@ class NordstromMensTshirt(Base):
 
     def __repr__(self):
         return f"<NordstromMensTshirt {self.brand} | {self.title[:40]}>"
+class NordstromWomensDress(Base):
+    __tablename__ = "nordstrom_womens_dresses"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    platform = Column(String(50), nullable=False, default="nordstrom")
+    platform_id = Column(Integer, nullable=True)
+    url = Column(Text, nullable=False, unique=True)
+
+    title = Column(Text, nullable=False)
+    brand = Column(String(200))
+    description = Column(Text)
+    category = Column(String(100), nullable=False, default="womens_dresses")
+    gender = Column(String(30), nullable=False, default="women")
+    currency = Column(String(10), default="USD")
+
+    # No redundant columns for size/color/price/review/attributes.
+    # Everything structured lives in these 3 JSON strings.
+    stock_price_json = Column(Text)   # color-wise variants, size stock, price text, discount info
+    attributes_json = Column(Text)    # neck_type, material, fit, dress_length, occasion, care, pattern, etc.
+    review_json = Column(Text)        # rating, count, fit, stars, pros, cons
+
+    raw_product_json = Column(Text)   # full managed product JSON saved in DB too
+    json_file_path = Column(Text)     # optional local JSON file written by scraper
+
+    data_label = Column(String(100), default="demonstration_data")
+    poc_run_id = Column(String(100))
+    is_active = Column(Boolean, default=True)
+    scraped_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<NordstromWomensDress {self.brand} | {self.title[:40]}>"
