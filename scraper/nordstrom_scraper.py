@@ -156,10 +156,23 @@ class NordstromScraper(BaseScraper):
 
     async def _start_camoufox(self):
         logger.info("[BROWSER] Starting camoufox (patched Firefox) — best anti-fingerprint")
-        # headless=False: visible browser avoids headless-specific fingerprint signals
-        self._camoufox_mgr = AsyncCamoufox(headless=False, geoip=True)
+        # Only pass headless — camoufox 0.4.x forwards all kwargs to Firefox launch()
+        # and rejects anything Playwright doesn't know (locale, geolocation, timezone).
+        self._camoufox_mgr = AsyncCamoufox(headless=False)
         self.browser = await self._camoufox_mgr.__aenter__()
-        self.context = None
+        # Create a context so US locale/geolocation are set the same way as other modes
+        self.context = await self.browser.new_context(
+            locale="en-US",
+            timezone_id="America/New_York",
+            geolocation={"latitude": 40.7128, "longitude": -74.0060},
+            permissions=["geolocation"],
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "DNT": "1",
+            },
+        )
+        await self.context.add_init_script(STEALTH_SCRIPT)
         self._mode = "camoufox"
         logger.info("[BROWSER] camoufox ready")
 
@@ -168,7 +181,6 @@ class NordstromScraper(BaseScraper):
         self.playwright = await patchright_playwright().start()
         self.browser = await self.playwright.chromium.launch(
             headless=True,
-            slow_mo=60,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-features=IsolateOrigins,site-per-process",
@@ -180,6 +192,8 @@ class NordstromScraper(BaseScraper):
             viewport={"width": 1366, "height": 768},
             locale="en-US",
             timezone_id="America/New_York",
+            geolocation={"latitude": 40.7128, "longitude": -74.0060},
+            permissions=["geolocation"],
             extra_http_headers={
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -199,7 +213,6 @@ class NordstromScraper(BaseScraper):
         self.browser = await self.playwright.chromium.launch(
             channel="chrome",
             headless=True,
-            slow_mo=60,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-features=IsolateOrigins,site-per-process",
@@ -211,6 +224,8 @@ class NordstromScraper(BaseScraper):
             viewport={"width": 1366, "height": 768},
             locale="en-US",
             timezone_id="America/New_York",
+            geolocation={"latitude": 40.7128, "longitude": -74.0060},
+            permissions=["geolocation"],
             extra_http_headers={
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -222,23 +237,22 @@ class NordstromScraper(BaseScraper):
         logger.info("[BROWSER] playwright + Chrome ready")
 
     async def stop(self):
-        if self._mode == "camoufox" and self._camoufox_mgr:
-            await self._camoufox_mgr.__aexit__(None, None, None)
-        else:
-            if self.browser:
-                await self.browser.close()
-            if self.playwright:
-                await self.playwright.stop()
+        try:
+            if self._mode == "camoufox" and self._camoufox_mgr:
+                await self._camoufox_mgr.__aexit__(None, None, None)
+            else:
+                if self.browser:
+                    await self.browser.close()
+                if self.playwright:
+                    await self.playwright.stop()
+        except Exception as e:
+            logger.debug(f"Browser cleanup error (safe to ignore on Ctrl+C): {e}")
         logger.info("[BROWSER] stopped")
 
     async def new_page(self):
-        if self._mode == "camoufox":
-            page = await self.browser.new_page()
-            await page.add_init_script(STEALTH_SCRIPT)
-        else:
-            page = await self.context.new_page()
-            if HAS_STEALTH and self._mode == "playwright":
-                await stealth_async(page)
+        page = await self.context.new_page()
+        if HAS_STEALTH and self._mode == "playwright":
+            await stealth_async(page)
         return page
 
     # ── Category entry point ─────────────────────────────────────────────────
@@ -351,9 +365,12 @@ class NordstromScraper(BaseScraper):
                 return None
 
             await self._human_mouse_move(page)
-            await self._scroll_to_load(page)
 
             variant_stock = await self._collect_variant_stock(page)
+            # Only scroll if __NEXT_DATA__ failed and we need DOM-rendered content
+            if not variant_stock:
+                await self._scroll_to_load(page)
+                variant_stock = await self._collect_variant_stock(page)
 
             soup = BeautifulSoup(await page.content(), "lxml")
             return self._parse_product(soup, url, neck_type_hint, variant_stock)
@@ -566,70 +583,42 @@ class NordstromScraper(BaseScraper):
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     async def _collect_variant_stock(self, page) -> list[dict]:
-        """Collect color-size availability from the PDP controls."""
-        variants: list[dict] = []
-    
+        """
+        Collect color × size availability with minimal DOM interactions.
+        Price is read once per color (T-shirt prices don't vary by size).
+        """
         colors = await self._get_color_controls(page)
-    
-        # If product has no color swatches, collect sizes only
+
         if not colors:
-            sizes = await self._collect_sizes_with_prices(page)
-            return [{"color": None, "sizes": sizes}] if sizes else []
-    
+            price = await self._read_price_from_page(page)
+            sizes = await self._get_size_controls(page)
+            return [{"color": None, "sizes": [
+                {"size": s["size"], "available": s["available"], **price}
+                for s in sizes
+            ]}] if sizes else []
+
+        variants = []
         for idx, color in enumerate(colors):
             color_name = color.get("name")
-    
             try:
-                # First color is already selected, no need to click
                 if idx > 0:
                     try:
-                        # Best for Nordstrom swatch buttons: avoids scroll/stability timeout
                         await color["locator"].evaluate("el => el.click()")
                     except Exception:
-                        try:
-                            # Fallback if JS click fails
-                            await color["locator"].click(timeout=2000, force=True)
-                        except Exception as e:
-                            logger.debug(f"Failed clicking color {color_name}: {e}")
-                            continue
-    
-                    await asyncio.sleep(random.uniform(0.7, 1.3))
-    
-                # After color selection, collect all size availability + prices
-                sizes = await self._collect_sizes_with_prices(page)
-    
-                variants.append({
-                    "color": color_name,
-                    "sizes": sizes,
-                })
-    
+                        await color["locator"].click(timeout=2000, force=True)
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+
+                price = await self._read_price_from_page(page)
+                sizes = await self._get_size_controls(page)
+                variants.append({"color": color_name, "sizes": [
+                    {"size": s["size"], "available": s["available"], **price}
+                    for s in sizes
+                ]})
             except Exception as e:
                 logger.debug(f"Could not collect stock for color {color_name}: {e}")
                 continue
-    
-        return variants
-    async def _collect_sizes_with_prices(self, page) -> list[dict]:
-        sizes = []
-        controls = await self._get_size_controls(page)
-        if not controls:
-            price = await self._read_price_from_page(page)
-            return [{"size": None, "available": None, **price}] if price else []
 
-        for item in controls:
-            price = {}
-            if item["available"]:
-                try:
-                    await self._select_size(page, item["size"])
-                    await asyncio.sleep(random.uniform(0.25, 0.55))
-                    price = await self._read_price_from_page(page)
-                except Exception as e:
-                    logger.debug(f"Could not select size {item['size']}: {e}")
-            sizes.append({
-                "size": item["size"],
-                "available": item["available"],
-                **price,
-            })
-        return sizes
+        return variants
 
     async def _get_color_controls(self, page) -> list[dict]:
         controls = []
@@ -658,88 +647,56 @@ class NordstromScraper(BaseScraper):
                 continue
 
         return controls
-    async def _get_size_options(self, page) -> list[dict]:
-        controls = await self._get_size_controls(page)
-        return [{"size": item["size"], "available": item["available"]} for item in controls]
-
     async def _get_size_controls(self, page) -> list[dict]:
+        ul = page.locator("ul#size-filter-product-page-option-list")
         try:
-            await page.click("#size-filter-product-page-anchor", timeout=2500)
-            await asyncio.sleep(random.uniform(0.2, 0.5))
+            is_visible = await ul.is_visible(timeout=500)
         except Exception:
-            pass
+            is_visible = False
+
+        if not is_visible:
+            try:
+                await page.locator("#size-filter-product-page-anchor").evaluate("el => el.click()")
+                await asyncio.sleep(random.uniform(0.2, 0.4))
+            except Exception:
+                pass
+
+        try:
+            await ul.wait_for(state="visible", timeout=4000)
+        except Exception:
+            return []
 
         sizes = []
-        candidates = page.locator(
-            "ul#size-filter-product-page-option-list li, "
-            "ul#size-filter-product-page-option-list button, "
-            "[data-testid*='size'] li, "
-            "[data-testid*='size'] button"
-        )
-        count = await candidates.count()
+        seen = set()
+        items = ul.locator("li[role='option']")
+        count = await items.count()
+
         for i in range(count):
-            locator = candidates.nth(i)
+            li = items.nth(i)
             try:
-                text = self._clean_text(await locator.inner_text(timeout=800))
-                if not text or text.lower() in {"size", "select a size"}:
+                # Read only the first span (size name), ignoring "Only N left" sibling span
+                name_span = li.locator("span.G75tb").first
+                size_name = self._clean_text(await name_span.inner_text(timeout=800))
+                if not size_name or size_name.lower() in {"size", "select a size"}:
                     continue
 
-                disabled = await locator.get_attribute("disabled")
-                aria_disabled = await locator.get_attribute("aria-disabled")
-                class_name = await locator.get_attribute("class")
-                lowered = f"{text} {class_name or ''}".lower()
+                aria_disabled = await li.get_attribute("aria-disabled")
+                class_name = await li.get_attribute("class") or ""
                 unavailable = (
-                    disabled is not None
-                    or aria_disabled == "true"
-                    or "not available" in lowered
-                    or "unavailable" in lowered
-                    or "sold out" in lowered
-                    or "disabled" in lowered
+                    aria_disabled == "true"
+                    or "unavailable" in class_name.lower()
+                    or "disabled" in class_name.lower()
                 )
-                clean_size = re.sub(r"\b(not available|unavailable|sold out)\b", "", text, flags=re.I).strip()
-                if clean_size:
-                    sizes.append({"size": clean_size, "available": not unavailable, "locator": locator})
+
+                key = size_name.lower()
+                if key not in seen:
+                    seen.add(key)
+                    sizes.append({"size": size_name, "available": not unavailable})
             except Exception:
                 continue
 
-        deduped = []
-        seen = set()
-        for item in sizes:
-            key = item["size"].lower()
-            if key not in seen:
-                seen.add(key)
-                deduped.append(item)
-        return deduped
+        return sizes
 
-    async def _select_size(self, page, size: str) -> None:
-        def normalize(s):
-            return s.lower().replace("-", "").replace(" ", "")
-
-        target = normalize(size)
-
-        candidates = page.locator(
-            "ul#size-filter-product-page-option-list li, "
-            "ul#size-filter-product-page-option-list button"
-        )
-
-        count = await candidates.count()
-
-        for i in range(count):
-            locator = candidates.nth(i)
-
-            try:
-                text = await locator.inner_text(timeout=500)
-                clean = re.sub(r"(not available|sold out|unavailable)", "", text, flags=re.I)
-                clean = clean.strip()
-
-                if normalize(clean) in target or target in normalize(clean):
-                    await locator.click(timeout=2500, force=True)
-                    return
-
-            except Exception:
-                continue
-
-        raise ValueError(f"Size option not found: {size}")
     async def _read_price_from_page(self, page) -> dict:
         soup = BeautifulSoup(await page.content(), "lxml")
         current_el = soup.select_one("[data-botify-lu='current-price']")
