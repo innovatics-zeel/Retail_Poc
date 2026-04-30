@@ -65,6 +65,8 @@ _MIGRATION_TABLE = {
     "004_create_review_signals.sql":  "review_signals",
     "005_create_platforms.sql":       "platforms",
     "008_create_nordstrom_mens_tshirts.sql": "nordstrom_mens_tshirts",
+    "009_create_amazon_womens_dresses.sql": "amazon_womens_dresses",
+    "010_create_amazon_mens_tshirts.sql": "amazon_mens_tshirts",
 }
 
 _REQUIRED_SCHEMA = {
@@ -112,6 +114,46 @@ _REQUIRED_SCHEMA = {
         "scraped_at",
         "updated_at",
     },
+    "amazon_womens_dresses": {
+        "id",
+        "platform",
+        "url",
+        "title",
+        "brand",
+        "asin",
+        "category",
+        "gender",
+        "unit_count",
+        "variants_json",
+        "attributes_json",
+        "reviews_json",
+        "raw_attributes_json",
+        "data_label",
+        "poc_run_id",
+        "is_active",
+        "scraped_at",
+        "updated_at",
+    },
+    "amazon_mens_tshirts": {
+        "id",
+        "platform",
+        "url",
+        "title",
+        "brand",
+        "asin",
+        "category",
+        "gender",
+        "unit_count",
+        "variants_json",
+        "attributes_json",
+        "reviews_json",
+        "raw_attributes_json",
+        "data_label",
+        "poc_run_id",
+        "is_active",
+        "scraped_at",
+        "updated_at",
+    },
 }
 
 _REQUIRED_COLUMN_TYPES = {
@@ -121,6 +163,16 @@ _REQUIRED_COLUMN_TYPES = {
     ("nordstrom_mens_tshirts", "size"): "text",
     ("nordstrom_mens_tshirts", "stock_json"): "text",
     ("nordstrom_mens_tshirts", "review_details_json"): "text",
+    ("amazon_womens_dresses", "url"): "text",
+    ("amazon_womens_dresses", "variants_json"): "text",
+    ("amazon_womens_dresses", "attributes_json"): "text",
+    ("amazon_womens_dresses", "reviews_json"): "text",
+    ("amazon_womens_dresses", "raw_attributes_json"): "text",
+    ("amazon_mens_tshirts", "url"): "text",
+    ("amazon_mens_tshirts", "variants_json"): "text",
+    ("amazon_mens_tshirts", "attributes_json"): "text",
+    ("amazon_mens_tshirts", "reviews_json"): "text",
+    ("amazon_mens_tshirts", "raw_attributes_json"): "text",
 }
 
 
