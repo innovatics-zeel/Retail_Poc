@@ -299,18 +299,24 @@ class AmazonWomensDressesScraper:
 
         for attempt in range(1, self.config.max_retries + 1):
             try:
+                if not await self.ensure_amazon_header_ready(page):
+                    raise RuntimeError("Amazon header/location selector did not appear after hard reloads")
+
                 await page.locator("#nav-global-location-popover-link").click(timeout=15000)
                 zip_input = page.locator("#GLUXZipUpdateInput")
                 await zip_input.wait_for(state="visible", timeout=15000)
                 await zip_input.fill(ZIP_CODE)
                 await page.locator("#GLUXZipUpdate").click(timeout=10000)
+                await self.handle_delivery_continue_modal(page)
                 done_button = page.locator('button[name="glowDoneButton"], button.a-button-text[name="glowDoneButton"]')
                 try:
                     await done_button.click(timeout=10000)
                 except PlaywrightTimeoutError:
                     logger.debug("[REGION] Done button not shown; continuing to verification")
+                await self.handle_delivery_continue_modal(page)
                 await page.wait_for_load_state("domcontentloaded", timeout=15000)
                 await page.reload(wait_until="domcontentloaded", timeout=self.config.timeout_ms)
+                await self.handle_delivery_continue_modal(page)
                 if await self.region_is_confirmed(page):
                     logger.info("[INFO] Region changed successfully to USA (60601)")
                     return
@@ -319,12 +325,62 @@ class AmazonWomensDressesScraper:
                 await asyncio.sleep(2 * attempt)
         raise RuntimeError("Could not confirm Amazon delivery region as USA (60601)")
 
+    async def ensure_amazon_header_ready(self, page: Page) -> bool:
+        header_selectors = [
+            "#nav-global-location-popover-link",
+            "#nav-logo-sprites",
+            "#navbar",
+        ]
+        for reload_attempt in range(4):
+            for selector in header_selectors:
+                try:
+                    locator = page.locator(selector).first
+                    await locator.wait_for(state="attached", timeout=5000)
+                    return True
+                except Exception:
+                    continue
+
+            if reload_attempt < 3:
+                logger.warning(f"[REGION] Amazon header missing; hard reload {reload_attempt + 1}/3")
+                try:
+                    await page.reload(wait_until="domcontentloaded", timeout=self.config.timeout_ms)
+                    await self.detect_captcha(page, raise_on_block=True)
+                    await self.handle_delivery_continue_modal(page)
+                except Exception as exc:
+                    logger.debug(f"[REGION] Hard reload failed: {exc}")
+                await page.wait_for_timeout(1000)
+
+        return False
+
     async def region_is_confirmed(self, page: Page) -> bool:
         try:
             location_text = await page.locator("#glow-ingress-line2").inner_text(timeout=8000)
             return ZIP_CODE in normalize_space(location_text) or "Chicago" in location_text
         except Exception:
             return False
+
+    async def handle_delivery_continue_modal(self, page: Page) -> bool:
+        selectors = [
+            'input[aria-labelledby*="Continue"]',
+            'span.a-button:has-text("Continue") input',
+            'button:has-text("Continue")',
+            'input[type="submit"][value="Continue"]',
+            'text="Continue"',
+        ]
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if await locator.count() == 0:
+                    continue
+                if not await locator.is_visible(timeout=1500):
+                    continue
+                await locator.click(timeout=3000, force=True)
+                await page.wait_for_timeout(500)
+                logger.debug("[REGION] Delivery confirmation Continue button clicked")
+                return True
+            except Exception:
+                continue
+        return False
 
     async def detect_total_pages(self, page: Page) -> int:
         await self.scroll_to_bottom(page)
@@ -373,6 +429,7 @@ class AmazonWomensDressesScraper:
     def extract_product_urls(self, html: str) -> list[str]:
         soup = BeautifulSoup(html, "lxml")
         urls: list[str] = []
+
         for card in soup.select('div[data-component-type="s-search-result"], div.s-result-item[data-asin]'):
             asin = (card.get("data-asin") or "").strip()
             if not valid_asin(asin):
@@ -381,12 +438,12 @@ class AmazonWomensDressesScraper:
                 continue
 
             links = card.select("h2 a.a-link-normal, a.a-link-normal.s-link-style.a-text-normal")
-            links.extend(card.select("div[data-csa-c-swatch-url] a"))
             for link in links:
                 href = link.get("href")
                 canonical = canonicalize_amazon_url(href, fallback_asin=asin)
                 if canonical:
                     urls.append(canonical)
+
         return list(dict.fromkeys(urls))
 
     async def scrape_product_with_recovery(self, url: str) -> Optional[dict[str, Any]]:
@@ -432,8 +489,17 @@ class AmazonWomensDressesScraper:
 
         brand = await self.extract_brand(page)
         attributes, raw_attributes = await self.extract_attributes(page)
-        variants = await self.extract_variants(page)
         reviews = await self.extract_reviews(page)
+        variants = await self.extract_variants(page)
+
+        unit_raw = raw_attributes.get("Unit Count") or raw_attributes.get("Number of Items")
+        unit_count = 1
+        if unit_raw:
+            match = re.search(r"\d+", str(unit_raw))
+            if match:
+                unit_count = int(match.group(0))
+        if unit_count <= 0:
+            unit_count = 1
 
         return {
             "platform": "amazon",
@@ -443,7 +509,7 @@ class AmazonWomensDressesScraper:
             "asin": asin,
             "category": "women_dresses",
             "gender": "women",
-            "unit_count": 1,
+            "unit_count": unit_count,
             "variants": variants,
             "attributes": attributes,
             "reviews": reviews,
@@ -637,11 +703,13 @@ class AmazonWomensDressesScraper:
         current_text = await first_text(
             page,
             [
+                "span.apex-pricetopay-value span.a-offscreen",
                 "#corePriceDisplay_desktop_feature_div span.a-price span.a-offscreen",
-                "span.a-price span.a-offscreen",
                 "#corePrice_feature_div span.a-offscreen",
+                "span.a-price span.a-offscreen",
             ],
         )
+
         original_texts = await all_visible_texts(
             page,
             [
@@ -651,13 +719,27 @@ class AmazonWomensDressesScraper:
                 "span.a-text-price span.a-offscreen",
             ],
         )
+
         current = parse_price(current_text)
         original = best_original_price(original_texts, current)
+
         discount_price = None
         discount_percent = None
-        if current is not None and original is not None and original > current:
-            discount_price = round(original - current, 2)
-            discount_percent = round(((original - current) / original) * 100, 2)
+
+        if current is not None and original is not None:
+            if original > current:
+                discount_price = round(original - current, 2)
+                discount_percent = round(((original - current) / original) * 100, 2)
+            else:
+                original = current
+                discount_price = 0.0
+                discount_percent = 0.0
+
+        elif current is not None and original is None:
+            original = current
+            discount_price = 0.0
+            discount_percent = 0.0
+
         return {
             "current_price": current,
             "original_price": original,
