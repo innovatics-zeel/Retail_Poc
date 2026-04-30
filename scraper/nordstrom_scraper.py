@@ -23,6 +23,8 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from scraper.base_scraper import BaseScraper
+from scraper.schemas import ProductData
+from database.models import NordstromMensTshirt
 
 # ── Try stealth backends in priority order ────────────────────────────────────
 
@@ -140,6 +142,42 @@ _PATTERN_MAP = {
 
 class NordstromScraper(BaseScraper):
     PLATFORM = "nordstrom"
+    CATEGORY = "mens_tshirts"
+    SCHEMA_CLASS = ProductData
+    DB_MODEL = NordstromMensTshirt
+
+    @staticmethod
+    def to_db_values(data: ProductData) -> dict:
+        return {
+            "platform":           data.platform,
+            "url":                str(data.url),
+            "title":              data.title,
+            "brand":              data.brand,
+            "description":        data.description,
+            "category":           data.category,
+            "gender":             data.gender,
+            "sub_category":       data.sub_category,
+            "current_price":      data.current_price,
+            "original_price":     data.original_price,
+            "discount_percent":   data.discount_percent,
+            "price_text":         data.price_text,
+            "discount_text":      data.discount_text,
+            "currency":           data.currency,
+            "color":              data.color,
+            "size":               data.size,
+            "stock_json":         data.stock_json,
+            "pattern":            data.pattern,
+            "material":           data.material,
+            "neck_type":          data.neck_type,
+            "sleeve_type":        data.sleeve_type,
+            "fit":                data.fit,
+            "care_instructions":  data.care_instructions,
+            "rating":             data.rating,
+            "review_count":       data.review_count,
+            "review_details_json": data.review_details_json,
+            "data_label":         data.data_label,
+            "poc_run_id":         data.poc_run_id,
+        }
 
     def __init__(self):
         super().__init__()

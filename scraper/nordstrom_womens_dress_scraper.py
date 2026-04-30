@@ -21,6 +21,8 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from scraper.base_scraper import BaseScraper
+from scraper.schemas import WomensDressData
+from database.models import NordstromWomensDress
 
 try:
     from camoufox.async_api import AsyncCamoufox
@@ -142,6 +144,30 @@ _CLOSURE_MAP = {
 
 class NordstromWomensDressScraper(BaseScraper):
     PLATFORM = "nordstrom"
+    CATEGORY = "womens_dresses"
+    SCHEMA_CLASS = WomensDressData
+    DB_MODEL = NordstromWomensDress
+
+    @staticmethod
+    def to_db_values(data: WomensDressData) -> dict:
+        return {
+            "platform":          data.platform,
+            "platform_id":       data.platform_id,
+            "url":               str(data.url),
+            "title":             data.title,
+            "brand":             data.brand,
+            "description":       data.description,
+            "category":          data.category,
+            "gender":            data.gender,
+            "currency":          data.currency,
+            "stock_price_json":  data.stock_price_json,
+            "attributes_json":   data.attributes_json,
+            "review_json":       data.review_json,
+            "raw_product_json":  data.raw_product_json,
+            "json_file_path":    data.json_file_path,
+            "data_label":        data.data_label,
+            "poc_run_id":        data.poc_run_id,
+        }
 
     def __init__(self, json_output_path: str = "data/nordstrom_womens_dresses.json"):
         super().__init__()
