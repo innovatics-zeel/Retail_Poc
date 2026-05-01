@@ -382,9 +382,9 @@ class AmazonMensTshirtScraper(BaseScraper):
             return None
 
         detail = self._detail_table(soup)
-        if not self._looks_like_mens_tshirt(title, soup, detail):
-            logger.warning(f"[AMZ-MT] skipping non men's T-shirt item: {title[:80]}")
-            return None
+        # if not self._looks_like_mens_tshirt(title, soup, detail):
+        #     logger.warning(f"[AMZ-MT] skipping non men's T-shirt item: {title[:80]}")
+        #     return None
 
         brand = self._brand(soup)
         logger.debug(f"[AMZ-MT] brand={brand!r}")

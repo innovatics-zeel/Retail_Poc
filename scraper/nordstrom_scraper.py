@@ -24,7 +24,7 @@ from loguru import logger
 
 from scraper.base_scraper import BaseScraper
 from scraper.schemas import ProductData
-from database.models import NordstromProduct, GENDER_ID
+from database.models import GENDER_ID
 
 # ── Try stealth backends in priority order ────────────────────────────────────
 
@@ -144,7 +144,6 @@ class NordstromScraper(BaseScraper):
     PLATFORM = "nordstrom"
     CATEGORY = "mens_tshirts"
     SCHEMA_CLASS = ProductData
-    DB_MODEL = NordstromProduct
 
     @staticmethod
     def to_db_values(data: ProductData) -> dict:
@@ -254,7 +253,7 @@ class NordstromScraper(BaseScraper):
         logger.info("[BROWSER] Starting camoufox (patched Firefox) — best anti-fingerprint")
         # Only pass headless — camoufox 0.4.x forwards all kwargs to Firefox launch()
         # and rejects anything Playwright doesn't know (locale, geolocation, timezone).
-        self._camoufox_mgr = AsyncCamoufox(headless=False)
+        self._camoufox_mgr = AsyncCamoufox(headless=True)
         self.browser = await self._camoufox_mgr.__aenter__()
         # Create a context so US locale/geolocation are set the same way as other modes
         self.context = await self.browser.new_context(

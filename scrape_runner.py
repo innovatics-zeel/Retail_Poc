@@ -19,8 +19,8 @@ console = Console()
 
 # ── What to scrape — edit this list to add/remove jobs ───────────────────────
 SCRAPE_PLAN = [
-    {"platform": "nordstrom", "category": "mens_tshirts",   "max_products": 0},
-    {"platform": "nordstrom", "category": "womens_dresses",  "max_products": 0},
+    {"platform": "nordstrom", "category": "mens_tshirts",   "max_products": 5},
+    {"platform": "nordstrom", "category": "womens_dresses",  "max_products": 5},
     {"platform": "amazon",    "category": "mens_tshirts",   "max_products": 5},
     {"platform": "amazon",    "category": "womens_dresses",  "max_products": 5},
 ]

@@ -5,7 +5,7 @@ Auto-discovers all *_scraper.py modules in this package and builds a
 
 Adding a new scraper requires NO changes here — just drop a new file that:
   1. Subclasses BaseScraper
-  2. Sets PLATFORM, CATEGORY, SCHEMA_CLASS, DB_MODEL class attributes
+  2. Sets PLATFORM, CATEGORY, SCHEMA_CLASS class attributes
   3. Implements to_db_values(data) -> dict
 """
 import glob

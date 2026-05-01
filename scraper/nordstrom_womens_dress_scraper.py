@@ -22,7 +22,7 @@ from loguru import logger
 
 from scraper.base_scraper import BaseScraper
 from scraper.schemas import RawWomensDressPayload
-from database.models import NordstromProduct, GENDER_ID
+from database.models import GENDER_ID
 
 try:
     from camoufox.async_api import AsyncCamoufox
@@ -146,7 +146,6 @@ class NordstromWomensDressScraper(BaseScraper):
     PLATFORM = "nordstrom"
     CATEGORY = "womens_dresses"
     SCHEMA_CLASS = RawWomensDressPayload
-    DB_MODEL = NordstromProduct
 
     @staticmethod
     def to_db_values(data: RawWomensDressPayload) -> dict:
@@ -229,7 +228,7 @@ class NordstromWomensDressScraper(BaseScraper):
 
     async def _start_camoufox(self):
         logger.info("[BROWSER] Starting camoufox")
-        self._camoufox_mgr = AsyncCamoufox(headless=False)
+        self._camoufox_mgr = AsyncCamoufox(headless=True)
         self.browser = await self._camoufox_mgr.__aenter__()
         self.context = await self.browser.new_context(
             locale="en-US",

@@ -5,6 +5,17 @@ from database.connection import Base
 GENDER_ID = {"men": 1, "women": 2, "unisex": 3}
 
 
+class Platform(Base):
+    __tablename__ = "platforms"
+    id           = Column(SmallInteger, primary_key=True, index=True)
+    name         = Column(String(50),  nullable=False, unique=True)
+    display_name = Column(String(100), nullable=True)
+    base_url     = Column(Text,        nullable=False)
+
+    def __repr__(self):
+        return f"<Platform {self.name}>"
+
+
 class Brand(Base):
     __tablename__ = "brands"
     brand_id = Column(Integer, primary_key=True, index=True)
@@ -48,7 +59,7 @@ class Size(Base):
 class Product(Base):
     __tablename__ = "products"
     product_id       = Column(Integer, primary_key=True, index=True)
-    platform_id      = Column(SmallInteger, nullable=False)
+    platform_id      = Column(SmallInteger, ForeignKey("platforms.id"), nullable=False)
     brand_id         = Column(Integer, ForeignKey("brands.brand_id"), nullable=True)
     category_id      = Column(Integer, ForeignKey("categories.category_id"), nullable=True)
     title            = Column(Text, nullable=False)
