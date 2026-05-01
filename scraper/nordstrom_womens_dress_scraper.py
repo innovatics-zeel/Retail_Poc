@@ -228,7 +228,7 @@ class NordstromWomensDressScraper(BaseScraper):
 
     async def _start_camoufox(self):
         logger.info("[BROWSER] Starting camoufox")
-        self._camoufox_mgr = AsyncCamoufox(headless=True)
+        self._camoufox_mgr = AsyncCamoufox(headless=False)
         self.browser = await self._camoufox_mgr.__aenter__()
         self.context = await self.browser.new_context(
             locale="en-US",
