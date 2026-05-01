@@ -29,3 +29,5 @@ scrape_log.txt
 # OS/editor noise
 .DS_Store
 Thumbs.db
+venv/
+.venv/
