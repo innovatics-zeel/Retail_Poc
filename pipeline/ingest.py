@@ -1,24 +1,41 @@
 """
 ingest.py
-Validates raw scraper dicts and inserts them into the database.
-Writes one row per Nordstrom men's T-shirt.
+Generic ingest pipeline — validates raw scraper dicts and writes to the
+normalized 8-table schema (brands, categories, colors, sizes, products,
+product_variants, reviews).
+
+The old flat nordstrom/amazon tables are no longer used.
+Adding a new scraper requires NO changes here.
 """
-import json
 import sys
 from loguru import logger
 from sqlalchemy.orm import Session
 
 sys.path.append("..")
+
 from database.connection import SessionLocal
-from database.models import NordstromMensTshirt
-from scraper.schemas import ProductData
+from scraper.registry import get_scraper, get_by_category
+from pipeline.ingest_normalized import write_normalized
 
 
-def ingest_batch(raw_records: list[dict], category: str) -> dict:
-    """Validate and insert a list of raw scraper dicts for the given category."""
+def ingest_batch(raw_records: list[dict], category: str, platform: str = None) -> dict:
+    """Validate raw scraper dicts and write to the normalized schema."""
     summary = {"total": len(raw_records), "success": 0, "failed": 0, "skipped": 0}
-    db = SessionLocal()
 
+    # Prefer explicit platform; fall back to reading it from the first record
+    if not platform:
+        for r in raw_records:
+            if r and isinstance(r, dict) and r.get("platform"):
+                platform = r["platform"]
+                break
+
+    try:
+        scraper_cls = get_scraper(platform, category) if platform else get_by_category(category)
+    except ValueError:
+        scraper_cls = get_by_category(category)
+    schema_cls = scraper_cls.SCHEMA_CLASS
+
+    db = SessionLocal()
     try:
         for raw in raw_records:
             if not raw:
@@ -27,19 +44,9 @@ def ingest_batch(raw_records: list[dict], category: str) -> dict:
 
             try:
                 raw.setdefault("category", category)
-                data = ProductData(**raw)
-
-                if data.category != category:
-                    logger.warning(
-                        f"Category mismatch '{category}' vs '{data.category}' for {data.url} - using payload value"
-                    )
-
-                if data.platform != "nordstrom" or data.category != "mens_tshirts":
-                    logger.warning(f"Unknown category '{category}' — skipping")
-                    summary["skipped"] += 1
-                    continue
-
-                _upsert(db, data)
+                data = schema_cls(**raw)
+                values = scraper_cls.to_db_values(data)
+                write_normalized(db, values)
                 db.commit()
                 summary["success"] += 1
 
@@ -59,63 +66,12 @@ def ingest_batch(raw_records: list[dict], category: str) -> dict:
     return summary
 
 
-def _upsert(db: Session, data: ProductData) -> None:
-    """Insert or refresh one denormalized Nordstrom men's T-shirt row."""
-    product = db.query(NordstromMensTshirt).filter_by(url=data.url).first()
-    review_details = _json_loads(data.review_details_json)
-
-    values = {
-        "platform": data.platform,
-        "url": data.url,
-        "title": data.title,
-        "brand": data.brand,
-        "description": data.description,
-        "category": data.category,
-        "gender": data.gender,
-        "sub_category": data.sub_category,
-        "current_price": data.current_price,
-        "discount_price": data.current_price,
-        "actual_price": data.original_price,
-        "original_price": data.original_price,
-        "discount_percent": data.discount_percent,
-        "price_text": data.price_text,
-        "discount_text": data.discount_text,
-        "currency": data.currency,
-        "color": data.color,
-        "size": data.size,
-        "stock_json": data.stock_json,
-        "pattern": data.pattern,
-        "material": data.material,
-        "neck_type": data.neck_type,
-        "sleeve_type": data.sleeve_type,
-        "fit": data.fit,
-        "care_instructions": data.care_instructions,
-        "rating": data.rating,
-        "review_count": data.review_count,
-        "review_fit": review_details.get("fit"),
-        "star_distribution_json": json.dumps(review_details.get("star_distribution") or {}, ensure_ascii=True),
-        "review_pros_json": json.dumps(review_details.get("pros") or [], ensure_ascii=True),
-        "review_cons_json": json.dumps(review_details.get("cons") or [], ensure_ascii=True),
-        "review_details_json": data.review_details_json,
-        "data_label": data.data_label,
-        "poc_run_id": data.poc_run_id,
-        "is_active": True,
-    }
-
-    if product:
+def _upsert(db: Session, model, values: dict) -> None:
+    record = db.query(model).filter_by(url=values["url"]).first()
+    if record:
         for key, value in values.items():
-            setattr(product, key, value)
-        logger.debug(f"  ↻ Updated: {data.url}")
+            setattr(record, key, value)
+        logger.debug(f"  ↻ Updated: {values['url']}")
     else:
-        db.add(NordstromMensTshirt(**values))
-        logger.debug(f"  + New: {data.title[:50]}")
-
-
-def _json_loads(value: str | None) -> dict:
-    if not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        return {}
+        db.add(model(**values))
+        logger.debug(f"  + New: {values.get('title', values['url'])[:50]}")

@@ -23,6 +23,8 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from scraper.base_scraper import BaseScraper
+from scraper.schemas import ProductData
+from database.models import GENDER_ID
 
 # ── Try stealth backends in priority order ────────────────────────────────────
 
@@ -113,6 +115,8 @@ MENS_SUBCATEGORIES = [
     ("graphic",  "/browse/men/clothing/shirts/tshirts/graphic"),
 ]
 
+INR_TO_USD = 0.012  # Convert INR prices to USD when page shows ₹ / INR / Rs
+
 _FIT_KEYWORDS = ["slim", "regular", "relaxed", "classic", "athletic", "loose", "tailored", "oversized"]
 
 _MATERIAL_PAT = re.compile(r"\d+%\s*\w+(?:\s*[,/&]\s*\d+%\s*\w+)*", re.I)
@@ -138,6 +142,97 @@ _PATTERN_MAP = {
 
 class NordstromScraper(BaseScraper):
     PLATFORM = "nordstrom"
+    CATEGORY = "mens_tshirts"
+    SCHEMA_CLASS = ProductData
+
+    @staticmethod
+    def to_db_values(data: ProductData) -> dict:
+        import json as _json
+
+        stock_variants = []
+        if data.stock_json:
+            try:
+                stock_variants = _json.loads(data.stock_json)
+            except Exception:
+                pass
+
+        review_details = {}
+        if data.review_details_json:
+            try:
+                review_details = _json.loads(data.review_details_json)
+            except Exception:
+                pass
+
+        attributes = {
+            "color":              data.color,
+            "size":               data.size,
+            "material":           data.material,
+            "neck_type":          data.neck_type,
+            "fit":                data.fit,
+            "pattern":            data.pattern,
+            "sleeve_type":        data.sleeve_type,
+            "care_instructions":  data.care_instructions,
+        }
+        # stock_variants: [{color, price_text, discount_text, sizes: [{size, available, …}]}]
+        stock_variants_data = [{
+            "color":         v.get("color") if isinstance(v, dict) else None,
+            "price_text":    data.price_text,
+            "discount_text": data.discount_text,
+            "sizes":         v.get("sizes", []) if isinstance(v, dict) else [],
+        } for v in stock_variants] if stock_variants else [{
+            "color":         data.color,
+            "price_text":    data.price_text,
+            "discount_text": data.discount_text,
+            "sizes":         [],
+        }]
+
+        review = {
+            "rating":            float(data.rating) if data.rating else None,
+            "review_count":      data.review_count,
+            "fit":               review_details.get("fit"),
+            "star_distribution": review_details.get("star_distribution", {}),
+            "pros":              review_details.get("pros", []),
+            "cons":              review_details.get("cons", []),
+        }
+        raw = {
+            "platform": data.platform, "url": str(data.url),
+            "title": data.title, "brand": data.brand,
+            "category": data.category, "gender": data.gender,
+            "attributes": attributes, "stock_variants": stock_variants_data, "review": review,
+        }
+
+        return {
+            "platform_id":       2,
+            "gender_id":         GENDER_ID.get((data.gender or "men").lower(), 1),
+            "category":          data.category,
+            "url":               str(data.url),
+            "title":             data.title,
+            "brand":             data.brand,
+            "description":       data.description,
+            "sub_category":      data.sub_category,
+            "currency":          data.currency,
+            "current_price":     data.current_price,
+            "original_price":    data.original_price,
+            "discount_percent":  data.discount_percent,
+            "rating":            data.rating,
+            "review_count":      min(int(data.review_count or 0), 2_147_483_647),
+            # individual attribute columns
+            "color":             data.color,
+            "size":              data.size,
+            "neck_type":         data.neck_type,
+            "fit":               data.fit,
+            "pattern":           data.pattern,
+            "material":          data.material,
+            "care_instructions": data.care_instructions,
+            "sleeve_type":       data.sleeve_type,
+            # JSON blobs
+            "attributes_json":     _json.dumps(attributes,          ensure_ascii=False),
+            "stock_variants_json": _json.dumps(stock_variants_data, ensure_ascii=False),
+            "review_json":         _json.dumps(review,              ensure_ascii=False),
+            "raw_json":          _json.dumps(raw,        ensure_ascii=False),
+            "data_label":        data.data_label,
+            "poc_run_id":        data.poc_run_id,
+        }
 
     def __init__(self):
         super().__init__()
@@ -172,6 +267,7 @@ class NordstromScraper(BaseScraper):
                 "DNT": "1",
             },
         )
+        await self.context.clear_cookies()
         await self.context.add_init_script(STEALTH_SCRIPT)
         self._mode = "camoufox"
         logger.info("[BROWSER] camoufox ready")
@@ -200,6 +296,7 @@ class NordstromScraper(BaseScraper):
                 "DNT": "1",
             },
         )
+        await self.context.clear_cookies()
         await self.context.add_init_script(STEALTH_SCRIPT)
         self._mode = "patchright"
         logger.info("[BROWSER] patchright ready")
@@ -232,6 +329,7 @@ class NordstromScraper(BaseScraper):
                 "DNT": "1",
             },
         )
+        await self.context.clear_cookies()
         await self.context.add_init_script(STEALTH_SCRIPT)
         self._mode = "playwright"
         logger.info("[BROWSER] playwright + Chrome ready")
@@ -420,18 +518,37 @@ class NordstromScraper(BaseScraper):
                     current_price = float(offers.get("price") or 0) or None
                 except (TypeError, ValueError):
                     pass
-            el = soup.select_one("[data-botify-lu='current-price']")
-            if el:
-                price_text = el.get_text(" ", strip=True)
+            current_el = soup.select_one(
+                "[data-botify-lu='current-price'], "
+                "[data-testid='current-price'], "
+                "[class*='current-price'], "
+                "[aria-label*='Current price']"
+            )
+            if current_el:
+                price_text = self._clean_text(current_el.get_text(" ", strip=True))
             dom_price = self._parse_price(price_text or "")
             if dom_price is not None:
                 current_price = dom_price
-            el = soup.select_one("[data-botify-lu='initial-price'], [data-botify-lu='original-price']")
-            if el:
-                original_price = self._parse_price(el.get_text(" ", strip=True))
-            el = soup.select_one("[data-botify-lu='percent-discount']")
-            if el:
-                discount_text = el.get_text(" ", strip=True)
+
+            original_el = soup.select_one(
+                "[data-botify-lu='initial-price'], "
+                "[data-botify-lu='original-price'], "
+                "[data-testid='original-price'], "
+                "[data-testid='strikethrough-price'], "
+                "[class*='original-price'], "
+                "[class*='strikethrough'], "
+                "s"
+            )
+            if original_el:
+                original_price = self._parse_price(original_el.get_text(" ", strip=True))
+
+            discount_el = soup.select_one(
+                "[data-botify-lu='percent-discount'], "
+                "[data-testid='percent-off'], "
+                "[class*='discount']"
+            )
+            if discount_el:
+                discount_text = self._clean_text(discount_el.get_text(" ", strip=True))
 
             colors = []
             for img in soup.select("ul#product-page-color-swatches img.EgvtC"):
@@ -542,6 +659,9 @@ class NordstromScraper(BaseScraper):
             if discount_percent is None and discount_text:
                 discount_percent = self._parse_discount_percent(discount_text)
 
+            actual_price = original_price or current_price
+            discount_price = current_price if original_price and current_price and original_price > current_price else None
+
             return {
                 # ── SkuListing fields ──────────────────────────────────────
                 "platform":       "nordstrom",
@@ -554,6 +674,8 @@ class NordstromScraper(BaseScraper):
                 "gender":         "men",
                 "sub_category":   neck_type_hint or None,
                 "current_price":  current_price,
+                "discount_price": discount_price,
+                "actual_price":   actual_price,
                 "currency":       "USD",
                 "rating":         rating,
                 "review_count":   review_count,
@@ -567,7 +689,7 @@ class NordstromScraper(BaseScraper):
                 "sleeve_type":    "short sleeve",
                 "fit":            fit,
                 "care_instructions": care_instructions,
-                "stock_json":     json.dumps(variant_stock or [], ensure_ascii=True),
+                "stock_json":     json.dumps(variant_stock or [], ensure_ascii=False),
                 # ── PriceSnapshot extras ───────────────────────────────────
                 "original_price":    original_price,
                 "discount_percent":  discount_percent,
@@ -593,7 +715,7 @@ class NordstromScraper(BaseScraper):
             price = await self._read_price_from_page(page)
             sizes = await self._get_size_controls(page)
             return [{"color": None, "sizes": [
-                {"size": s["size"], "available": s["available"], **price}
+                {**s, **price}
                 for s in sizes
             ]}] if sizes else []
 
@@ -611,7 +733,7 @@ class NordstromScraper(BaseScraper):
                 price = await self._read_price_from_page(page)
                 sizes = await self._get_size_controls(page)
                 variants.append({"color": color_name, "sizes": [
-                    {"size": s["size"], "available": s["available"], **price}
+                    {**s, **price}
                     for s in sizes
                 ]})
             except Exception as e:
@@ -674,24 +796,37 @@ class NordstromScraper(BaseScraper):
         for i in range(count):
             li = items.nth(i)
             try:
-                # Read only the first span (size name), ignoring "Only N left" sibling span
+                # Read only the first span as size name. The full li text may include stock notes.
                 name_span = li.locator("span.G75tb").first
                 size_name = self._clean_text(await name_span.inner_text(timeout=800))
                 if not size_name or size_name.lower() in {"size", "select a size"}:
                     continue
 
                 aria_disabled = await li.get_attribute("aria-disabled")
+                aria_selected = await li.get_attribute("aria-selected")
                 class_name = await li.get_attribute("class") or ""
+                full_text = self._clean_text(await li.inner_text(timeout=800))
+                lower_text = full_text.lower()
+
                 unavailable = (
                     aria_disabled == "true"
                     or "unavailable" in class_name.lower()
                     or "disabled" in class_name.lower()
+                    or "not available" in lower_text
+                    or "sold out" in lower_text
+                    or "out of stock" in lower_text
+                    or "unavailable" in lower_text
                 )
 
                 key = size_name.lower()
                 if key not in seen:
                     seen.add(key)
-                    sizes.append({"size": size_name, "available": not unavailable})
+                    sizes.append({
+                        "size": size_name,
+                        "available": not unavailable,
+                        "stock_text": full_text,
+                        "aria_selected": aria_selected,
+                    })
             except Exception:
                 continue
 
@@ -699,16 +834,66 @@ class NordstromScraper(BaseScraper):
 
     async def _read_price_from_page(self, page) -> dict:
         soup = BeautifulSoup(await page.content(), "lxml")
-        current_el = soup.select_one("[data-botify-lu='current-price']")
-        original_el = soup.select_one("[data-botify-lu='initial-price'], [data-botify-lu='original-price']")
-        discount_el = soup.select_one("[data-botify-lu='percent-discount']")
 
-        price_text = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
+        # ── 1. JSON-LD offers ─────────────────────────────────────────────────
+        ld_price = None
+        ld = self._extract_json_ld(soup)
+        if ld and "offers" in ld:
+            offers = ld["offers"]
+            if isinstance(offers, list) and offers:
+                offers = offers[0]
+            if isinstance(offers, dict):
+                try:
+                    ld_price = float(offers.get("price") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+
+        # ── 2. itemprop / meta fallback ───────────────────────────────────────
+        meta_price = None
+        meta_el = soup.find("meta", {"itemprop": "price"})
+        if meta_el and meta_el.get("content"):
+            try:
+                meta_price = float(meta_el["content"])
+            except (TypeError, ValueError):
+                pass
+
+        # ── 3. DOM selectors ──────────────────────────────────────────────────
+        current_el = soup.select_one(
+            "[data-botify-lu='current-price'], "
+            "[data-testid='current-price'], [data-testid='sale-price'], "
+            "[data-testid='price-amount'], "
+            "[class*='current-price'], [class*='sale-price'], "
+            "[aria-label*='Current price'], [aria-label*='Sale price'], "
+            "[itemprop='price']"
+        )
+        original_el = soup.select_one(
+            "[data-botify-lu='initial-price'], "
+            "[data-botify-lu='original-price'], "
+            "[data-testid='original-price'], "
+            "[data-testid='strikethrough-price'], "
+            "[class*='original-price'], "
+            "[class*='strikethrough'], "
+            "s"
+        )
+        discount_el = soup.select_one(
+            "[data-botify-lu='percent-discount'], "
+            "[data-testid='percent-off'], "
+            "[class*='discount-percent'], [class*='percent-off']"
+        )
+
+        price_text    = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
         original_text = self._clean_text(original_el.get_text(" ", strip=True)) if original_el else None
         discount_text = self._clean_text(discount_el.get_text(" ", strip=True)) if discount_el else None
 
         discounted_price = self._parse_price(price_text or "")
-        original_price = self._parse_price(original_text or "")
+        original_price   = self._parse_price(original_text or "")
+
+        # Fall back to JSON-LD / meta if DOM selectors found nothing
+        if discounted_price is None:
+            discounted_price = ld_price or meta_price
+            if discounted_price is not None:
+                price_text = f"${discounted_price}"
+
         discount_percent = None
         if discounted_price and original_price and original_price > discounted_price:
             discount_percent = round((original_price - discounted_price) / original_price * 100, 2)
@@ -716,10 +901,8 @@ class NordstromScraper(BaseScraper):
             discount_percent = self._parse_discount_percent(discount_text)
 
         return {
-            "discounted_price": discounted_price,
-            "original_price": original_price,
-            "price_text": price_text,
-            "original_price_text": original_text,
+            "price_text": f"${discounted_price}" if discounted_price else price_text,
+            "original_price_text": f"${original_price}" if original_price else original_text,
             "discount_text": discount_text,
             "discount_percent": discount_percent,
             "currency": "USD",
@@ -811,11 +994,23 @@ class NordstromScraper(BaseScraper):
         return self._clean_text(m.group(1)) if m else None
 
     def _parse_price(self, text: str) -> Optional[float]:
-        m = re.search(r"[\d]+\.?\d*", (text or "").replace(",", ""))
+        raw = (text or "").replace(",", "")
+        m = re.search(r"[\d]+\.?\d*", raw)
+        if not m:
+            return None
+
         try:
-            return float(m.group(0)) if m else None
+            price = float(m.group(0))
         except (ValueError, AttributeError):
             return None
+
+        # Nordstrom normally shows USD, but if the page/session returns Indian
+        # currency, convert the numeric INR price into USD.
+        upper_raw = raw.upper()
+        if "₹" in raw or "INR" in upper_raw or "RS" in upper_raw:
+            return round(price * INR_TO_USD, 2)
+
+        return price
 
     def _parse_discount_percent(self, text: str) -> Optional[float]:
         m = re.search(r"(\d+(?:\.\d+)?)\s*%", text)

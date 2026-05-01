@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     scraper_delay_min:   float = Field(default=2.0)
     scraper_delay_max:   float = Field(default=5.0)
 
+    # ── AI / LLM ──────────────────────────────────────────────
+    anthropic_api_key: str = Field(default="")
+
     # ── POC metadata ──────────────────────────────────────────
     data_label: str = Field(default="demonstration_data")
     poc_run_id: str = Field(default="poc_run_001")

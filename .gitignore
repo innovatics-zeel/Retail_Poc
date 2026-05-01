@@ -1,3 +1,33 @@
 venv/
 .env
 .venv/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and secrets
+.env.*
+!.env.example
+
+# Scraper output / local runtime artifacts
+data/*.json
+data/*.jsonl
+data/*debug*.html
+scrape_log.txt
+*.log
+
+# Local tooling
+.codex
+.vscode/
+.idea/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+venv/
+.venv/
