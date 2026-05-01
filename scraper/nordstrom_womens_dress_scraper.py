@@ -21,8 +21,8 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from scraper.base_scraper import BaseScraper
-from scraper.schemas import WomensDressData
-from database.models import NordstromWomensDress
+from scraper.schemas import RawWomensDressPayload
+from database.models import NordstromProduct, GENDER_ID
 
 try:
     from camoufox.async_api import AsyncCamoufox
@@ -145,28 +145,72 @@ _CLOSURE_MAP = {
 class NordstromWomensDressScraper(BaseScraper):
     PLATFORM = "nordstrom"
     CATEGORY = "womens_dresses"
-    SCHEMA_CLASS = WomensDressData
-    DB_MODEL = NordstromWomensDress
+    SCHEMA_CLASS = RawWomensDressPayload
+    DB_MODEL = NordstromProduct
 
     @staticmethod
-    def to_db_values(data: WomensDressData) -> dict:
+    def to_db_values(data: RawWomensDressPayload) -> dict:
+        import json as _json
+        import re
+
+        attrs    = data.attributes.model_dump()
+        variants = [v.model_dump() for v in data.stock_variants]
+        review   = data.review.model_dump()
+
+        # extract flat price from first colour / first size
+        current_price = original_price = discount_percent = None
+        if variants:
+            first_size = (variants[0].get("sizes") or [{}])[0]
+            def _parse(text):
+                m = re.search(r"[\d]+\.?\d*", (text or "").replace(",", ""))
+                return round(float(m.group(0)), 2) if m else None
+            current_price    = _parse(first_size.get("price_text"))
+            original_price   = _parse(first_size.get("original_price_text"))
+            discount_percent = first_size.get("discount_percent")
+
+        raw = {
+            "platform": data.platform, "url": data.url,
+            "title": data.title, "brand": data.brand,
+            "category": data.category, "gender": data.gender,
+            "attributes": attrs, "stock_variants": variants, "review": review,
+        }
+
+        # first color from variants
+        first_color = variants[0].get("color") if variants else None
+
         return {
-            "platform":          data.platform,
-            "platform_id":       data.platform_id,
-            "url":               str(data.url),
-            "title":             data.title,
-            "brand":             data.brand,
-            "description":       data.description,
-            "category":          data.category,
-            "gender":            data.gender,
-            "currency":          data.currency,
-            "stock_price_json":  data.stock_price_json,
-            "attributes_json":   data.attributes_json,
-            "review_json":       data.review_json,
-            "raw_product_json":  data.raw_product_json,
-            "json_file_path":    data.json_file_path,
-            "data_label":        data.data_label,
-            "poc_run_id":        data.poc_run_id,
+            "platform_id":          2,
+            "gender_id":            GENDER_ID.get(data.gender, 2),
+            "category":             data.category,
+            "url":                  data.url,
+            "title":                data.title,
+            "brand":                data.brand,
+            "description":          None,
+            "sub_category":         None,
+            "currency":             "USD",
+            "current_price":        current_price,
+            "original_price":       original_price,
+            "discount_percent":     discount_percent,
+            "rating":               review.get("rating"),
+            "review_count":         min(int(review.get("review_count") or 0), 2_147_483_647),
+            # individual attribute columns
+            "color":                first_color,
+            "neck_type":            attrs.get("neck_type"),
+            "dress_length":         attrs.get("dress_length"),
+            "occasion":             attrs.get("occasion"),
+            "fit":                  attrs.get("fit"),
+            "pattern":              attrs.get("pattern"),
+            "closure_type":         attrs.get("closure_type"),
+            "material":             attrs.get("material"),
+            "care_instructions":    attrs.get("care_instructions"),
+            "sleeve_type":          attrs.get("sleeve_type"),
+            # JSON blobs
+            "attributes_json":      _json.dumps(attrs,     ensure_ascii=False),
+            "stock_variants_json":  _json.dumps(variants,  ensure_ascii=False),
+            "review_json":          _json.dumps(review,    ensure_ascii=False),
+            "raw_json":             _json.dumps(raw,       ensure_ascii=False),
+            "data_label":           "demonstration_data",
+            "poc_run_id":           None,
         }
 
     def __init__(self, json_output_path: str = "data/nordstrom_womens_dresses.json"):
@@ -534,9 +578,37 @@ class NordstromWomensDressScraper(BaseScraper):
 
     async def _read_price_from_page(self, page) -> dict:
         soup = BeautifulSoup(await page.content(), "lxml")
+
+        # ── 1. JSON-LD offers — most reliable across page refreshes ──────────
+        ld_price = None
+        ld = self._extract_json_ld(soup)
+        if ld and "offers" in ld:
+            offers = ld["offers"]
+            if isinstance(offers, list) and offers:
+                offers = offers[0]
+            if isinstance(offers, dict):
+                try:
+                    ld_price = float(offers.get("price") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+
+        # ── 2. itemprop / meta fallback ───────────────────────────────────────
+        meta_price = None
+        meta_el = soup.find("meta", {"itemprop": "price"})
+        if meta_el and meta_el.get("content"):
+            try:
+                meta_price = float(meta_el["content"])
+            except (TypeError, ValueError):
+                pass
+
+        # ── 3. DOM selectors (current-price element) ──────────────────────────
         current_el = soup.select_one(
-            "[data-botify-lu='current-price'], [data-testid='current-price'], "
-            "[class*='current-price'], [aria-label*='Current price']"
+            "[data-botify-lu='current-price'], "
+            "[data-testid='current-price'], [data-testid='sale-price'], "
+            "[data-testid='price-amount'], "
+            "[class*='current-price'], [class*='sale-price'], "
+            "[aria-label*='Current price'], [aria-label*='Sale price'], "
+            "[itemprop='price']"
         )
         original_el = soup.select_one(
             "[data-botify-lu='initial-price'], [data-botify-lu='original-price'], "
@@ -544,22 +616,29 @@ class NordstromWomensDressScraper(BaseScraper):
             "[class*='original-price'], [class*='strikethrough'], s"
         )
         discount_el = soup.select_one(
-            "[data-botify-lu='percent-discount'], [data-testid='percent-off'], [class*='discount']"
+            "[data-botify-lu='percent-discount'], [data-testid='percent-off'], "
+            "[class*='discount-percent'], [class*='percent-off']"
         )
 
-        price_text_raw = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
+        price_text_raw    = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
         original_text_raw = self._clean_text(original_el.get_text(" ", strip=True)) if original_el else None
-        discount_text = self._clean_text(discount_el.get_text(" ", strip=True)) if discount_el else None
+        discount_text     = self._clean_text(discount_el.get_text(" ", strip=True)) if discount_el else None
 
-        current_price = self._parse_price(price_text_raw or "")
+        current_price  = self._parse_price(price_text_raw or "")
         original_price = self._parse_price(original_text_raw or "")
+
+        # Fall back to JSON-LD / meta if DOM selectors found nothing
+        if current_price is None:
+            current_price = ld_price or meta_price
+            if current_price is not None:
+                price_text_raw = f"${current_price}"
+
         discount_percent = None
         if current_price and original_price and original_price > current_price:
             discount_percent = round((original_price - current_price) / original_price * 100, 2)
         if discount_percent is None and discount_text:
             discount_percent = self._parse_discount_percent(discount_text)
 
-        # No numeric price fields here; only display text + discount info.
         return {
             "price_text": f"${current_price}" if current_price is not None else price_text_raw,
             "original_price_text": f"${original_price}" if original_price is not None else original_text_raw,

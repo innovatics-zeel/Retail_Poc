@@ -18,3 +18,19 @@ pandas==2.2.2
 loguru==0.7.2
 tenacity==8.3.0
 rich==13.7.1
+
+# ── Streamlit + Visualisation ─────────────────────────────────
+streamlit==1.35.0
+plotly==5.22.0
+watchdog==4.0.1
+
+# ── AI / LLM ──────────────────────────────────────────────────
+anthropic==0.28.0
+
+# ── Scheduling ────────────────────────────────────────────────
+apscheduler==3.10.4
+
+# ── ML / Forecasting ─────────────────────────────────────────
+scikit-learn==1.5.0
+statsmodels==0.14.2
+numpy==1.26.4

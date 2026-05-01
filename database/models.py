@@ -1,101 +1,118 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Text,
-    Numeric,
-    DateTime,
-    Boolean,
-)
+from sqlalchemy import Column, Integer, SmallInteger, String, Text, Numeric, DateTime, Boolean, ForeignKey, JSON
 from sqlalchemy.sql import func
-
 from database.connection import Base
 
+GENDER_ID = {"men": 1, "women": 2, "unisex": 3}
 
-class NordstromMensTshirt(Base):
-    __tablename__ = "nordstrom_mens_tshirts"
 
-    id = Column(Integer, primary_key=True, index=True)
-
-    platform = Column(String(50), nullable=False, default="nordstrom")
-    url = Column(Text, nullable=False, unique=True)
-
-    title = Column(Text, nullable=False)
-    brand = Column(String(200))
-    description = Column(Text)
-    category = Column(String(100), nullable=False, default="mens_tshirts")
-    gender = Column(String(30), nullable=False, default="men")
-    sub_category = Column(String(150))
-
-    current_price = Column(Numeric(10, 2))
-    discount_price = Column(Numeric(10, 2))
-    actual_price = Column(Numeric(10, 2))
-    original_price = Column(Numeric(10, 2))
-    discount_percent = Column(Numeric(5, 2))
-    price_text = Column(Text)
-    discount_text = Column(Text)
-    currency = Column(String(10), default="USD")
-
-    color = Column(Text)
-    size = Column(Text)
-    stock_json = Column(Text)
-    pattern = Column(String(150))
-    material = Column(Text)
-    neck_type = Column(String(150))
-    sleeve_type = Column(String(150))
-    fit = Column(String(150))
-    dress_length = Column(String(150))
-    occasion = Column(String(150))
-    closure_type = Column(String(150))
-    care_instructions = Column(Text)
-
-    rating = Column(Numeric(3, 2))
-    review_count = Column(Integer, default=0)
-    review_fit = Column(Text)
-    star_distribution_json = Column(Text)
-    review_pros_json = Column(Text)
-    review_cons_json = Column(Text)
-    review_details_json = Column(Text)
-
-    raw_attributes_json = Column(Text)
-    data_label = Column(String(100), default="demonstration_data")
-    poc_run_id = Column(String(100))
-    is_active = Column(Boolean, default=True)
-    scraped_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+class Brand(Base):
+    __tablename__ = "brands"
+    brand_id = Column(Integer, primary_key=True, index=True)
+    name     = Column(String(200), nullable=False, unique=True)
 
     def __repr__(self):
-        return f"<NordstromMensTshirt {self.brand} | {self.title[:40]}>"
-class NordstromWomensDress(Base):
-    __tablename__ = "nordstrom_womens_dresses"
+        return f"<Brand {self.name}>"
 
-    id = Column(Integer, primary_key=True, index=True)
 
-    platform = Column(String(50), nullable=False, default="nordstrom")
-    platform_id = Column(Integer, nullable=True)
-    url = Column(Text, nullable=False, unique=True)
-
-    title = Column(Text, nullable=False)
-    brand = Column(String(200))
-    description = Column(Text)
-    category = Column(String(100), nullable=False, default="womens_dresses")
-    gender = Column(String(30), nullable=False, default="women")
-    currency = Column(String(10), default="USD")
-
-    # No redundant columns for size/color/price/review/attributes.
-    # Everything structured lives in these 3 JSON strings.
-    stock_price_json = Column(Text)   # color-wise variants, size stock, price text, discount info
-    attributes_json = Column(Text)    # neck_type, material, fit, dress_length, occasion, care, pattern, etc.
-    review_json = Column(Text)        # rating, count, fit, stars, pros, cons
-
-    raw_product_json = Column(Text)   # full managed product JSON saved in DB too
-    json_file_path = Column(Text)     # optional local JSON file written by scraper
-
-    data_label = Column(String(100), default="demonstration_data")
-    poc_run_id = Column(String(100))
-    is_active = Column(Boolean, default=True)
-    scraped_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+class Category(Base):
+    __tablename__ = "categories"
+    category_id = Column(Integer, primary_key=True, index=True)
+    name        = Column(String(100), nullable=False, unique=True)
+    gender      = Column(String(20), nullable=True)
 
     def __repr__(self):
-        return f"<NordstromWomensDress {self.brand} | {self.title[:40]}>"
+        return f"<Category {self.name}>"
+
+
+class Color(Base):
+    __tablename__ = "colors"
+    color_id     = Column(Integer, primary_key=True, index=True)
+    name         = Column(String(100), nullable=False, unique=True)
+    color_family = Column(String(50), nullable=True)
+
+    def __repr__(self):
+        return f"<Color {self.name} / {self.color_family}>"
+
+
+class Size(Base):
+    __tablename__ = "sizes"
+    size_id     = Column(Integer, primary_key=True, index=True)
+    label       = Column(String(50), nullable=False, unique=True)
+    sort_order  = Column(Integer, nullable=False, default=999)
+    size_system = Column(String(20), nullable=False, default="alpha")
+
+    def __repr__(self):
+        return f"<Size {self.label}>"
+
+
+class Product(Base):
+    __tablename__ = "products"
+    product_id       = Column(Integer, primary_key=True, index=True)
+    platform_id      = Column(SmallInteger, nullable=False)
+    brand_id         = Column(Integer, ForeignKey("brands.brand_id"), nullable=True)
+    category_id      = Column(Integer, ForeignKey("categories.category_id"), nullable=True)
+    title            = Column(Text, nullable=False)
+    url              = Column(Text, nullable=False, unique=True)
+    platform_item_id = Column(String(100), nullable=True)
+    material         = Column(Text, nullable=True)
+    neck_type        = Column(String(100), nullable=True)
+    sleeve_type      = Column(String(100), nullable=True)
+    fit              = Column(String(100), nullable=True)
+    pattern          = Column(String(100), nullable=True)
+    care             = Column(Text, nullable=True)
+    scraped_at       = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<Product {self.title[:40]}>"
+
+
+class ProductVariant(Base):
+    __tablename__ = "product_variants"
+    variant_id     = Column(Integer, primary_key=True, index=True)
+    product_id     = Column(Integer, ForeignKey("products.product_id"), nullable=False)
+    color_id       = Column(Integer, ForeignKey("colors.color_id"), nullable=True)
+    size_id        = Column(Integer, ForeignKey("sizes.size_id"), nullable=True)
+    is_available   = Column(Boolean, nullable=False, default=True)
+    price          = Column(Numeric(10, 2), nullable=True)
+    original_price = Column(Numeric(10, 2), nullable=True)
+    discount_pct   = Column(Numeric(5, 2), nullable=True)
+    currency       = Column(String(3), nullable=False, default="USD")
+    low_stock      = Column(Boolean, nullable=False, default=False)
+    stock_note     = Column(String(200), nullable=True)
+    scraped_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<ProductVariant product={self.product_id} color={self.color_id} size={self.size_id}>"
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+    review_id    = Column(Integer, primary_key=True, index=True)
+    product_id   = Column(Integer, ForeignKey("products.product_id"), nullable=False)
+    rating_avg   = Column(Numeric(3, 1), nullable=True)
+    review_count = Column(Integer, nullable=False, default=0)
+    fit_feedback = Column(String(100), nullable=True)
+    stars_1_pct  = Column(SmallInteger, nullable=True)
+    stars_2_pct  = Column(SmallInteger, nullable=True)
+    stars_3_pct  = Column(SmallInteger, nullable=True)
+    stars_4_pct  = Column(SmallInteger, nullable=True)
+    stars_5_pct  = Column(SmallInteger, nullable=True)
+    pros         = Column(JSON, nullable=True)
+    cons         = Column(JSON, nullable=True)
+    scraped_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<Review product={self.product_id} rating={self.rating_avg}>"
+
+
+class RecommendationFeedback(Base):
+    __tablename__ = "recommendation_feedback"
+    id                  = Column(Integer,     primary_key=True, index=True)
+    recommendation_text = Column(Text,        nullable=False)
+    category            = Column(String(100), nullable=True)
+    action              = Column(String(20),  nullable=False)
+    modified_text       = Column(Text,        nullable=True)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<RecommendationFeedback {self.action} | {self.recommendation_text[:40]}>"

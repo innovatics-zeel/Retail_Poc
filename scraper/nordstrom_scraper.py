@@ -24,7 +24,7 @@ from loguru import logger
 
 from scraper.base_scraper import BaseScraper
 from scraper.schemas import ProductData
-from database.models import NordstromMensTshirt
+from database.models import NordstromProduct, GENDER_ID
 
 # ── Try stealth backends in priority order ────────────────────────────────────
 
@@ -144,39 +144,95 @@ class NordstromScraper(BaseScraper):
     PLATFORM = "nordstrom"
     CATEGORY = "mens_tshirts"
     SCHEMA_CLASS = ProductData
-    DB_MODEL = NordstromMensTshirt
+    DB_MODEL = NordstromProduct
 
     @staticmethod
     def to_db_values(data: ProductData) -> dict:
-        return {
-            "platform":           data.platform,
-            "url":                str(data.url),
-            "title":              data.title,
-            "brand":              data.brand,
-            "description":        data.description,
-            "category":           data.category,
-            "gender":             data.gender,
-            "sub_category":       data.sub_category,
-            "current_price":      data.current_price,
-            "original_price":     data.original_price,
-            "discount_percent":   data.discount_percent,
-            "price_text":         data.price_text,
-            "discount_text":      data.discount_text,
-            "currency":           data.currency,
+        import json as _json
+
+        stock_variants = []
+        if data.stock_json:
+            try:
+                stock_variants = _json.loads(data.stock_json)
+            except Exception:
+                pass
+
+        review_details = {}
+        if data.review_details_json:
+            try:
+                review_details = _json.loads(data.review_details_json)
+            except Exception:
+                pass
+
+        attributes = {
             "color":              data.color,
             "size":               data.size,
-            "stock_json":         data.stock_json,
-            "pattern":            data.pattern,
             "material":           data.material,
             "neck_type":          data.neck_type,
-            "sleeve_type":        data.sleeve_type,
             "fit":                data.fit,
+            "pattern":            data.pattern,
+            "sleeve_type":        data.sleeve_type,
             "care_instructions":  data.care_instructions,
-            "rating":             data.rating,
-            "review_count":       data.review_count,
-            "review_details_json": data.review_details_json,
-            "data_label":         data.data_label,
-            "poc_run_id":         data.poc_run_id,
+        }
+        # stock_variants: [{color, price_text, discount_text, sizes: [{size, available, …}]}]
+        stock_variants_data = [{
+            "color":         v.get("color") if isinstance(v, dict) else None,
+            "price_text":    data.price_text,
+            "discount_text": data.discount_text,
+            "sizes":         v.get("sizes", []) if isinstance(v, dict) else [],
+        } for v in stock_variants] if stock_variants else [{
+            "color":         data.color,
+            "price_text":    data.price_text,
+            "discount_text": data.discount_text,
+            "sizes":         [],
+        }]
+
+        review = {
+            "rating":            float(data.rating) if data.rating else None,
+            "review_count":      data.review_count,
+            "fit":               review_details.get("fit"),
+            "star_distribution": review_details.get("star_distribution", {}),
+            "pros":              review_details.get("pros", []),
+            "cons":              review_details.get("cons", []),
+        }
+        raw = {
+            "platform": data.platform, "url": str(data.url),
+            "title": data.title, "brand": data.brand,
+            "category": data.category, "gender": data.gender,
+            "attributes": attributes, "stock_variants": stock_variants_data, "review": review,
+        }
+
+        return {
+            "platform_id":       2,
+            "gender_id":         GENDER_ID.get((data.gender or "men").lower(), 1),
+            "category":          data.category,
+            "url":               str(data.url),
+            "title":             data.title,
+            "brand":             data.brand,
+            "description":       data.description,
+            "sub_category":      data.sub_category,
+            "currency":          data.currency,
+            "current_price":     data.current_price,
+            "original_price":    data.original_price,
+            "discount_percent":  data.discount_percent,
+            "rating":            data.rating,
+            "review_count":      min(int(data.review_count or 0), 2_147_483_647),
+            # individual attribute columns
+            "color":             data.color,
+            "size":              data.size,
+            "neck_type":         data.neck_type,
+            "fit":               data.fit,
+            "pattern":           data.pattern,
+            "material":          data.material,
+            "care_instructions": data.care_instructions,
+            "sleeve_type":       data.sleeve_type,
+            # JSON blobs
+            "attributes_json":     _json.dumps(attributes,          ensure_ascii=False),
+            "stock_variants_json": _json.dumps(stock_variants_data, ensure_ascii=False),
+            "review_json":         _json.dumps(review,              ensure_ascii=False),
+            "raw_json":          _json.dumps(raw,        ensure_ascii=False),
+            "data_label":        data.data_label,
+            "poc_run_id":        data.poc_run_id,
         }
 
     def __init__(self):
@@ -780,11 +836,36 @@ class NordstromScraper(BaseScraper):
     async def _read_price_from_page(self, page) -> dict:
         soup = BeautifulSoup(await page.content(), "lxml")
 
+        # ── 1. JSON-LD offers ─────────────────────────────────────────────────
+        ld_price = None
+        ld = self._extract_json_ld(soup)
+        if ld and "offers" in ld:
+            offers = ld["offers"]
+            if isinstance(offers, list) and offers:
+                offers = offers[0]
+            if isinstance(offers, dict):
+                try:
+                    ld_price = float(offers.get("price") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+
+        # ── 2. itemprop / meta fallback ───────────────────────────────────────
+        meta_price = None
+        meta_el = soup.find("meta", {"itemprop": "price"})
+        if meta_el and meta_el.get("content"):
+            try:
+                meta_price = float(meta_el["content"])
+            except (TypeError, ValueError):
+                pass
+
+        # ── 3. DOM selectors ──────────────────────────────────────────────────
         current_el = soup.select_one(
             "[data-botify-lu='current-price'], "
-            "[data-testid='current-price'], "
-            "[class*='current-price'], "
-            "[aria-label*='Current price']"
+            "[data-testid='current-price'], [data-testid='sale-price'], "
+            "[data-testid='price-amount'], "
+            "[class*='current-price'], [class*='sale-price'], "
+            "[aria-label*='Current price'], [aria-label*='Sale price'], "
+            "[itemprop='price']"
         )
         original_el = soup.select_one(
             "[data-botify-lu='initial-price'], "
@@ -798,15 +879,21 @@ class NordstromScraper(BaseScraper):
         discount_el = soup.select_one(
             "[data-botify-lu='percent-discount'], "
             "[data-testid='percent-off'], "
-            "[class*='discount']"
+            "[class*='discount-percent'], [class*='percent-off']"
         )
 
-        price_text = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
+        price_text    = self._clean_text(current_el.get_text(" ", strip=True)) if current_el else None
         original_text = self._clean_text(original_el.get_text(" ", strip=True)) if original_el else None
         discount_text = self._clean_text(discount_el.get_text(" ", strip=True)) if discount_el else None
 
         discounted_price = self._parse_price(price_text or "")
-        original_price = self._parse_price(original_text or "")
+        original_price   = self._parse_price(original_text or "")
+
+        # Fall back to JSON-LD / meta if DOM selectors found nothing
+        if discounted_price is None:
+            discounted_price = ld_price or meta_price
+            if discounted_price is not None:
+                price_text = f"${discounted_price}"
 
         discount_percent = None
         if discounted_price and original_price and original_price > discounted_price:
