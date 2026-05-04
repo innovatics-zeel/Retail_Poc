@@ -4,7 +4,7 @@ Writes scraped data to the normalized 8-table schema.
 Called automatically from ingest_batch — no scraper changes needed.
 
 Table write order:
-  platforms (pre-seeded) → brands → categories → colors → sizes
+  platforms (pre-seeded) → brands → categories → colors → sizes → attribute masters
   → products → product_variants → reviews
 """
 import json
@@ -14,7 +14,10 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from database.connection import SessionLocal
-from database.models import Brand, Category, Color, Size, Product, ProductVariant, Review
+from database.models import (
+    Brand, Category, Color, Size, Material, NeckType, SleeveType, Fit, Pattern,
+    Product, ProductVariant, Review,
+)
 
 # ── Color-family mapping ──────────────────────────────────────────────────────
 # Keywords are matched as substrings (case-insensitive) in the color name.
@@ -97,6 +100,27 @@ def _get_or_create_size(db: Session, label: str) -> Optional[int]:
     return obj.size_id
 
 
+def _clean_master_name(name: Optional[str]) -> Optional[str]:
+    if name is None:
+        return None
+    cleaned = re.sub(r"\s+", " ", str(name)).strip()
+    if not cleaned or cleaned.lower() in {"none", "nan", "unknown", "n/a"}:
+        return None
+    return cleaned[:200]
+
+
+def _get_or_create_master(db: Session, model, id_attr: str, name: Optional[str]) -> Optional[int]:
+    cleaned = _clean_master_name(name)
+    if not cleaned:
+        return None
+    obj = db.query(model).filter_by(name=cleaned).first()
+    if not obj:
+        obj = model(name=cleaned)
+        db.add(obj)
+        db.flush()
+    return getattr(obj, id_attr)
+
+
 def _get_or_create_product(
     db: Session,
     values: dict,
@@ -150,6 +174,7 @@ def _insert_variant(
     product_id: int,
     color_id: Optional[int],
     size_id: Optional[int],
+    attr_ids: dict,
     entry: dict,
 ) -> None:
     price = entry.get("current_price") or entry.get("price")
@@ -175,6 +200,11 @@ def _insert_variant(
         product_id=product_id,
         color_id=color_id,
         size_id=size_id,
+        material_id=attr_ids.get("material_id"),
+        neck_type_id=attr_ids.get("neck_type_id"),
+        sleeve_type_id=attr_ids.get("sleeve_type_id"),
+        fit_id=attr_ids.get("fit_id"),
+        pattern_id=attr_ids.get("pattern_id"),
         is_available=bool(is_available),
         price=price,
         original_price=orig_price,
@@ -219,6 +249,13 @@ def write_normalized(db: Session, values: dict) -> None:
     brand_id    = _get_or_create_brand(db, values.get("brand"))
     category_id = _get_or_create_category(db, category_name, gender)
     product_id  = _get_or_create_product(db, values, brand_id, category_id)
+    attr_ids = {
+        "material_id":    _get_or_create_master(db, Material, "material_id", values.get("material")),
+        "neck_type_id":   _get_or_create_master(db, NeckType, "neck_type_id", values.get("neck_type")),
+        "sleeve_type_id": _get_or_create_master(db, SleeveType, "sleeve_type_id", values.get("sleeve_type")),
+        "fit_id":         _get_or_create_master(db, Fit, "fit_id", values.get("fit")),
+        "pattern_id":     _get_or_create_master(db, Pattern, "pattern_id", values.get("pattern")),
+    }
 
     # ── Parse stock_variants_json → variants ──────────────────────────────────
     sv_json = values.get("stock_variants_json")
@@ -238,7 +275,7 @@ def write_normalized(db: Session, values: dict) -> None:
                 for size_entry in sizes:
                     label   = size_entry.get("size")
                     size_id = _get_or_create_size(db, label) if label else None
-                    _insert_variant(db, product_id, color_id, size_id, size_entry)
+                    _insert_variant(db, product_id, color_id, size_id, attr_ids, size_entry)
             else:
                 # Amazon style — flat variant; size may be a comma-sep string
                 size_str    = variant.get("size") or ""
@@ -246,9 +283,9 @@ def write_normalized(db: Session, values: dict) -> None:
                 if size_labels:
                     for label in size_labels:
                         size_id = _get_or_create_size(db, label)
-                        _insert_variant(db, product_id, color_id, size_id, variant)
+                        _insert_variant(db, product_id, color_id, size_id, attr_ids, variant)
                 else:
-                    _insert_variant(db, product_id, color_id, None, variant)
+                    _insert_variant(db, product_id, color_id, None, attr_ids, variant)
 
     # ── Parse review_json → review ────────────────────────────────────────────
     review_json = values.get("review_json")

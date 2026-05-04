@@ -1,1 +1,1105 @@
-[]
+[
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/maeve-midi-dress/7737947",
+    "title": "Maeve Midi Dress",
+    "brand": "ASTR the Label",
+    "description": "Pleating and a ruched bodice add to the charm of this swingy and romantic midi dress.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Green Pink",
+      "Slate Blue",
+      "Dark Sage",
+      "Blue Multi Abstract",
+      "Periwinkle Floral",
+      "Lilac",
+      "Lavender Multi Fl",
+      "Pink",
+      "Orange Pin",
+      "Wine"
+    ],
+    "sizes": [
+      "X-Small",
+      "Small",
+      "Medium",
+      "Large",
+      "X-Large"
+    ],
+    "stock_price": [
+      {
+        "color": "Green Pink",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": false,
+            "stock_text": "X-Small Not available in Green Pink",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small - Only 1 left",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": false,
+            "stock_text": "Medium Not available in Green Pink",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Green Pink",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Green Pink",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Slate Blue",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large - Only a few left",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Slate Blue",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Dark Sage",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Blue Multi Abstract",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": false,
+            "stock_text": "X-Small Not available in Blue Multi Abstract",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Blue Multi Abstract",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium - Only 1 left",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Blue Multi Abstract",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Blue Multi Abstract",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Periwinkle Floral",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Lilac",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Lavender Multi Fl",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Pink",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Orange Pin",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Wine",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": false,
+            "stock_text": "X-Small Not available in Wine",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Wine",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium - Only 1 left",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Wine",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Wine",
+            "price_text": "$149.97",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "v-neck",
+      "dress_length": "midi",
+      "occasion": null,
+      "fit": null,
+      "pattern": null,
+      "closure_type": "zip",
+      "material": "100% polyester",
+      "care_instructions": "Dry clean",
+      "sleeve_type": null,
+      "details_text": "Pleating and a ruched bodice add to the charm of this swingy and romantic midi dress. 39\" center front length (size Medium) Hidden side-zip closure V-neck Adjustable straps Lined bodice 100% polyester Dry clean Imported Item #10249004"
+    },
+    "review": {
+      "rating": 4.3,
+      "review_count": 147,
+      "fit": "True to size",
+      "star_distribution": {
+        "5": 66,
+        "4": 10,
+        "3": 14,
+        "2": 5,
+        "1": 5
+      },
+      "pros": [
+        "fit (30)",
+        "appearance (30)",
+        "comfort (21)",
+        "satisfaction (20)",
+        "color (20)"
+      ],
+      "cons": []
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/chloe-corset-midi-dress/8602426",
+    "title": "Chloe Corset Midi Dress",
+    "brand": "LEAU",
+    "description": "This midi dress features internal corset boning that sculpts and supports while the square neckline frames the décolletage and gathered hip detailing creates soft volume through the midi-length skirt.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "White"
+    ],
+    "sizes": [
+      "X-Small",
+      "Small",
+      "Medium",
+      "Large",
+      "X-Large",
+      "XX-Large"
+    ],
+    "stock_price": [
+      {
+        "color": "White",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "XX-Large",
+            "available": true,
+            "stock_text": "XX-Large",
+            "price_text": "$210.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "square neck",
+      "dress_length": "midi",
+      "occasion": null,
+      "fit": null,
+      "pattern": null,
+      "closure_type": "zip",
+      "material": null,
+      "care_instructions": null,
+      "sleeve_type": null,
+      "details_text": "This midi dress features internal corset boning that sculpts and supports while the square neckline frames the décolletage and gathered hip detailing creates soft volume through the midi-length skirt. Corset midi dress Internal corset boning Square neckline Gathered hip detail Hidden back zip closure Item #11067857"
+    },
+    "review": {
+      "rating": 3.0,
+      "review_count": 2,
+      "fit": "Runs slightly large",
+      "star_distribution": {
+        "5": 50,
+        "4": 0,
+        "3": 0,
+        "2": 0,
+        "1": 50
+      },
+      "pros": [],
+      "cons": []
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/caroline-floral-mock-neck-maxi-dress/7753217",
+    "title": "Caroline Floral Mock Neck Maxi Dress",
+    "brand": "Petal & Pup",
+    "description": "A colorful floral print enlivens an ankle-grazing maxi dress fashioned with a mock neck and tie belt for contemporary allure.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Multi Floral",
+      "Red Orange"
+    ],
+    "sizes": [
+      "X-Small",
+      "Small",
+      "Medium",
+      "Large",
+      "X-Large"
+    ],
+    "stock_price": [
+      {
+        "color": "Multi Floral",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": false,
+            "stock_text": "X-Small Not available in Multi Floral",
+            "price_text": "$115.99",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Multi Floral",
+            "price_text": "$115.99",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": false,
+            "stock_text": "Medium Not available in Multi Floral",
+            "price_text": "$115.99",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Multi Floral",
+            "price_text": "$115.99",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$115.99",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Red Orange",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$104.27",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small - Only a few left",
+            "price_text": "$104.27",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium - Only a few left",
+            "price_text": "$104.27",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large - Only 2 left",
+            "price_text": "$104.27",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$104.27",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "mock neck",
+      "dress_length": "maxi",
+      "occasion": null,
+      "fit": null,
+      "pattern": "floral",
+      "closure_type": null,
+      "material": "100% rayon",
+      "care_instructions": "Hand wash, dry flat",
+      "sleeve_type": "sleeveless",
+      "details_text": "A colorful floral print enlivens an ankle-grazing maxi dress fashioned with a mock neck and tie belt for contemporary allure. Back keyhole with button-and-loop closure Mock neck Sleeveless, with cutaway shoulders Unlined 100% rayon Hand wash, dry flat Imported Item #10263907"
+    },
+    "review": {
+      "rating": 4.1,
+      "review_count": 76,
+      "fit": "True to size",
+      "star_distribution": {
+        "5": 63,
+        "4": 12,
+        "3": 7,
+        "2": 8,
+        "1": 11
+      },
+      "pros": [
+        "satisfaction (13)",
+        "appearance (10)",
+        "fit (9)",
+        "color (9)",
+        "flattering (8)"
+      ],
+      "cons": []
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/8622773",
+    "title": "Ambuto Print Sleeveless Fit & Flare Dress",
+    "brand": "Max Mara",
+    "description": "A vintage-inspired greyscale print underscores the retro style of this sleeveless dress done in a classic fit-and-flare silhouette topped with a removable spread collar.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Ivory"
+    ],
+    "sizes": [
+      "10",
+      "12",
+      "14"
+    ],
+    "stock_price": [
+      {
+        "color": "Ivory",
+        "sizes": [
+          {
+            "size": "10",
+            "available": true,
+            "stock_text": "10 - Only 2 left",
+            "price_text": "$2167.5",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "12",
+            "available": true,
+            "stock_text": "12 - Only 1 left",
+            "price_text": "$2167.5",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "14",
+            "available": true,
+            "stock_text": "14 - Only 2 left",
+            "price_text": "$2167.5",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": null,
+      "dress_length": null,
+      "occasion": null,
+      "fit": null,
+      "pattern": "printed",
+      "closure_type": "zip",
+      "material": "100% polyester",
+      "care_instructions": "Dry clean",
+      "sleeve_type": "sleeveless",
+      "details_text": "A vintage-inspired greyscale print underscores the retro style of this sleeveless dress done in a classic fit-and-flare silhouette topped with a removable spread collar. Hidden back-zip closure Jewel neck; removable spread collar with ties Sleeveless Side-seam pockets Removable belt 100% polyester Dry clean Made in Italy Designer Clothing Item #11087232"
+    },
+    "review": {
+      "rating": null,
+      "review_count": 0,
+      "fit": null,
+      "star_distribution": {},
+      "pros": [],
+      "cons": []
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/heaven-sent-strapless-minidress/8410117",
+    "title": "Heaven Sent Strapless Minidress",
+    "brand": "Princess Polly",
+    "description": "Textured tonal blooms romance this figure-skimming dress cut in a leggy length and made to show off your shoulders.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "White"
+    ],
+    "sizes": [
+      "0",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12"
+    ],
+    "stock_price": [
+      {
+        "color": "White",
+        "sizes": [
+          {
+            "size": "0",
+            "available": true,
+            "stock_text": "0",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "2",
+            "available": true,
+            "stock_text": "2",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "4",
+            "available": true,
+            "stock_text": "4",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "6",
+            "available": true,
+            "stock_text": "6",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "8",
+            "available": true,
+            "stock_text": "8",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "10",
+            "available": true,
+            "stock_text": "10",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "12",
+            "available": true,
+            "stock_text": "12",
+            "price_text": "$87.87",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "strapless",
+      "dress_length": "mini",
+      "occasion": null,
+      "fit": null,
+      "pattern": null,
+      "closure_type": "zip",
+      "material": "100% polyester",
+      "care_instructions": "Machine wash, tumble dry",
+      "sleeve_type": "strapless",
+      "details_text": "Textured tonal blooms romance this figure-skimming dress cut in a leggy length and made to show off your shoulders. Hidden side-zip closure Strapless Lined 100% polyester Machine wash, tumble dry Imported Item #10887360"
+    },
+    "review": {
+      "rating": 4.0,
+      "review_count": 34,
+      "fit": "True to size.",
+      "star_distribution": {
+        "5": 47,
+        "4": 24,
+        "3": 15,
+        "2": 9,
+        "1": 6
+      },
+      "pros": [
+        "quality (6)",
+        "cute (4)",
+        "fit (4)",
+        "satisfaction (4)",
+        "flattering (3)"
+      ],
+      "cons": []
+    }
+  }
+]

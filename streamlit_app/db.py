@@ -23,11 +23,11 @@ SELECT
     p.title,
     p.url,
     p.platform_item_id,
-    p.material,
-    p.neck_type,
-    p.sleeve_type,
-    p.fit,
-    p.pattern,
+    COALESCE(STRING_AGG(DISTINCT mat.name, ', ' ORDER BY mat.name), p.material) AS material,
+    COALESCE(STRING_AGG(DISTINCT nt.name,  ', ' ORDER BY nt.name),  p.neck_type) AS neck_type,
+    COALESCE(STRING_AGG(DISTINCT st.name,  ', ' ORDER BY st.name),  p.sleeve_type) AS sleeve_type,
+    COALESCE(STRING_AGG(DISTINCT ft.name,  ', ' ORDER BY ft.name),  p.fit) AS fit,
+    COALESCE(STRING_AGG(DISTINCT pat.name, ', ' ORDER BY pat.name), p.pattern) AS pattern,
     p.care,
     p.scraped_at,
     pl.name             AS platform,
@@ -37,9 +37,9 @@ SELECT
     cat.gender,
     r.rating_avg        AS rating,
     r.review_count,
-    r.fit_feedback,
-    r.pros,
-    r.cons,
+    MAX(r.fit_feedback::text) AS fit_feedback,
+    MAX(r.pros::text) AS pros,
+    MAX(r.cons::text) AS cons,
     r.stars_1_pct,
     r.stars_2_pct,
     r.stars_3_pct,
@@ -67,12 +67,17 @@ LEFT JOIN LATERAL (
 LEFT JOIN product_variants pv ON pv.product_id = p.product_id
 LEFT JOIN colors c            ON c.color_id    = pv.color_id
 LEFT JOIN sizes  s            ON s.size_id     = pv.size_id
+LEFT JOIN materials mat       ON mat.material_id   = pv.material_id
+LEFT JOIN neck_types nt       ON nt.neck_type_id   = pv.neck_type_id
+LEFT JOIN sleeve_types st     ON st.sleeve_type_id = pv.sleeve_type_id
+LEFT JOIN fits ft             ON ft.fit_id         = pv.fit_id
+LEFT JOIN patterns pat        ON pat.pattern_id    = pv.pattern_id
 {where}
 GROUP BY
     p.product_id, p.title, p.url, p.platform_item_id, p.material,
     p.neck_type, p.sleeve_type, p.fit, p.pattern, p.care, p.scraped_at,
     pl.name, pl.display_name, b.name, cat.name, cat.gender,
-    r.rating_avg, r.review_count, r.fit_feedback, r.pros, r.cons,
+    r.rating_avg, r.review_count,
     r.stars_1_pct, r.stars_2_pct, r.stars_3_pct, r.stars_4_pct, r.stars_5_pct
 ORDER BY r.review_count DESC NULLS LAST
 """
@@ -103,6 +108,101 @@ def load_products(platform: str = None, category: str = None) -> pd.DataFrame:
             rec["review_count"] = int(rec["review_count"]) if rec.get("review_count") else 0
             records.append(rec)
 
+        return pd.DataFrame(records)
+    finally:
+        db.close()
+
+
+_VARIANT_SQL = """
+SELECT
+    pv.variant_id,
+    pv.product_id,
+    CONCAT(pl.name, '-', p.product_id, '-', pv.variant_id) AS sku_code,
+    p.title,
+    p.url,
+    p.platform_item_id,
+    COALESCE(mat.name, p.material)       AS material,
+    COALESCE(nt.name, p.neck_type)       AS neck_type,
+    COALESCE(st.name, p.sleeve_type)     AS sleeve_type,
+    COALESCE(ft.name, p.fit)             AS fit,
+    COALESCE(pat.name, p.pattern)        AS pattern,
+    p.scraped_at       AS product_scraped_at,
+    pl.name            AS platform,
+    pl.display_name    AS platform_display,
+    b.name             AS brand,
+    cat.name           AS category,
+    cat.gender,
+    c.name             AS color,
+    c.color_family,
+    s.label            AS size,
+    pv.is_available,
+    pv.price           AS current_price,
+    pv.original_price,
+    pv.discount_pct,
+    pv.currency,
+    pv.low_stock,
+    pv.stock_note,
+    pv.scraped_at      AS variant_scraped_at,
+    r.rating_avg       AS rating,
+    r.review_count,
+    r.fit_feedback,
+    r.pros,
+    r.cons,
+    r.stars_1_pct,
+    r.stars_2_pct,
+    r.stars_3_pct,
+    r.stars_4_pct,
+    r.stars_5_pct
+FROM product_variants pv
+JOIN products p          ON p.product_id    = pv.product_id
+JOIN platforms pl        ON pl.id           = p.platform_id
+LEFT JOIN brands b       ON b.brand_id      = p.brand_id
+LEFT JOIN categories cat ON cat.category_id = p.category_id
+LEFT JOIN colors c       ON c.color_id      = pv.color_id
+LEFT JOIN sizes s        ON s.size_id       = pv.size_id
+LEFT JOIN materials mat  ON mat.material_id = pv.material_id
+LEFT JOIN neck_types nt  ON nt.neck_type_id = pv.neck_type_id
+LEFT JOIN sleeve_types st ON st.sleeve_type_id = pv.sleeve_type_id
+LEFT JOIN fits ft        ON ft.fit_id       = pv.fit_id
+LEFT JOIN patterns pat   ON pat.pattern_id  = pv.pattern_id
+LEFT JOIN LATERAL (
+    SELECT rating_avg, review_count, fit_feedback, pros, cons,
+           stars_1_pct, stars_2_pct, stars_3_pct, stars_4_pct, stars_5_pct
+    FROM reviews
+    WHERE product_id = p.product_id
+    ORDER BY scraped_at DESC
+    LIMIT 1
+) r ON TRUE
+{where}
+ORDER BY r.review_count DESC NULLS LAST, pv.variant_id
+"""
+
+
+def load_variant_skus(platform: str = None, category: str = None) -> pd.DataFrame:
+    """Return one row per saved product variant/SKU."""
+    db = _session()
+    try:
+        conditions, params = [], {}
+        if platform:
+            conditions.append("pl.name = :platform")
+            params["platform"] = platform
+        if category:
+            conditions.append("cat.name = :category")
+            params["category"] = category
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = db.execute(text(_VARIANT_SQL.format(where=where)), params).mappings().fetchall()
+        if not rows:
+            return pd.DataFrame()
+
+        records = []
+        for r in rows:
+            rec = dict(r)
+            for col in ("current_price", "original_price", "discount_pct", "rating"):
+                v = rec.get(col)
+                rec[col] = float(v) if v is not None else None
+            rec["review_count"] = int(rec["review_count"]) if rec.get("review_count") else 0
+            records.append(rec)
         return pd.DataFrame(records)
     finally:
         db.close()
@@ -192,6 +292,100 @@ def save_feedback(recommendation_text: str, action: str,
             {"t": recommendation_text, "c": category, "a": action, "m": modified_text},
         )
         db.commit()
+    finally:
+        db.close()
+
+
+# ── Trend scores & recommendations ───────────────────────────────────────────
+
+def load_trend_scores(category: str = None, platform: str = None,
+                      attr_key: str = None) -> pd.DataFrame:
+    db = _session()
+    try:
+        conditions, params = [], {}
+        if category and category != "All":
+            conditions.append("category = :category")
+            params["category"] = category
+        if platform and platform != "All":
+            conditions.append("platform = :platform")
+            params["platform"] = platform
+        if attr_key:
+            conditions.append("attr_key = :attr_key")
+            params["attr_key"] = attr_key
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = db.execute(
+            text(f"SELECT * FROM trend_scores {where} ORDER BY momentum_score DESC"),
+            params,
+        ).mappings().fetchall()
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame([dict(r) for r in rows])
+        for col in ("momentum_score", "avg_rating", "category_avg_rating",
+                    "rating_delta", "review_growth_pct"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
+    finally:
+        db.close()
+
+
+def load_recommendations(category: str = None, platform: str = None,
+                         status: str = None, limit: int = 30) -> list[dict]:
+    db = _session()
+    try:
+        conditions, params = [], {"limit": limit}
+        if category and category != "All":
+            conditions.append("category = :category")
+            params["category"] = category
+        if platform and platform != "All":
+            conditions.append("platform ILIKE :platform")
+            params["platform"] = f"%{platform}%"
+        if status:
+            conditions.append("status = :status")
+            params["status"] = status
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = db.execute(
+            text(f"""SELECT * FROM recommendations {where}
+                     ORDER BY generated_at DESC LIMIT :limit"""),
+            params,
+        ).mappings().fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+
+def update_recommendation_status(rec_id: int, status: str,
+                                  modified_text: str = None) -> None:
+    db = _session()
+    try:
+        db.execute(
+            text("""UPDATE recommendations
+                    SET status = :status, modified_text = :mt, actioned_at = NOW()
+                    WHERE rec_id = :rid"""),
+            {"status": status, "mt": modified_text, "rid": rec_id},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def load_review_velocity() -> list[dict]:
+    """Return category-platform weekly review time series for Tab 3 chart."""
+    db = _session()
+    try:
+        rows = db.execute(text("""
+            SELECT
+                cat.name                               AS category,
+                pl.name                                AS platform,
+                DATE_TRUNC('week', r.scraped_at)::date AS week,
+                SUM(r.review_count)                    AS total_reviews
+            FROM reviews r
+            JOIN products p     ON p.product_id    = r.product_id
+            JOIN categories cat ON cat.category_id = p.category_id
+            JOIN platforms  pl  ON pl.id           = p.platform_id
+            GROUP BY cat.name, pl.name, DATE_TRUNC('week', r.scraped_at)
+            ORDER BY cat.name, pl.name, week
+        """)).mappings().fetchall()
+        return [dict(r) for r in rows]
     finally:
         db.close()
 

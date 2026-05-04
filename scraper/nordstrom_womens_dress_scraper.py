@@ -81,6 +81,10 @@ _MATERIAL_PAT = re.compile(r"\d+%\s*[\w\-]+(?:\s*[,/&]\s*\d+%\s*[\w\-]+)*", re.I
 _DRESS_NECK_MAP = {
     "strapless": "strapless",
     "halter": "halter",
+    "surplice v-neck": "v-neck",
+    "surplice neckline": "surplice",
+    "surplice": "surplice",
+    "v-neckline": "v-neck",
     "v-neck": "v-neck",
     "v neck": "v-neck",
     "square neck": "square neck",
@@ -425,7 +429,10 @@ class NordstromWomensDressScraper(BaseScraper):
             details = self._extract_details(soup)
             details_text = details["details_text"]
             description = details["description"] or self._clean_text(details_text) or None
-            attributes = self._parse_attributes(title, details_text)
+            # Combine description paragraph + bullet items so attributes in either source are captured
+            # (mirrors men's scraper which always gets full section text including the description)
+            attr_text = " ".join(filter(None, [details.get("description"), details_text]))
+            attributes = self._parse_attributes(title, attr_text)
             review = self._parse_review_details(soup, ld)
 
             colors = [v.get("color") for v in (stock_price or []) if v.get("color")]
