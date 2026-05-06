@@ -213,8 +213,10 @@ st.markdown(f"""
     .forecast-grid {{ display:grid; grid-template-columns:1.05fr 1fr 1.05fr; gap:16px; align-items:start; }}
     .forecast-left {{ display:flex; flex-direction:column; gap:16px; }}
     .forecast-mid {{ display:flex; flex-direction:column; gap:16px; }}
-    .forecast-row {{ display:grid; grid-template-columns:126px 1fr 60px 48px; gap:12px; align-items:center; margin:12px 0; font-size:.8rem; }}
-    .forecast-name {{ color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .forecast-row {{ display:grid; grid-template-columns:126px 1fr 60px 104px; gap:12px; align-items:center; margin:12px 0; font-size:.8rem; }}
+    .forecast-name {{ color:var(--ink); min-width:0; }}
+    .forecast-name b {{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .forecast-name span {{ display:block; color:var(--muted); font-size:.68rem; line-height:1.25; margin-top:2px; }}
     .forecast-axis {{ position:relative; height:16px; background:linear-gradient(90deg,transparent 0 49%,#93a4b8 49% 50%,transparent 50%); border-top:1px solid #edf2f6; border-bottom:1px solid #edf2f6; }}
     .forecast-bar {{ position:absolute; top:3px; height:10px; border-radius:2px; }}
     .forecast-whisker {{ position:absolute; top:-2px; height:20px; width:1px; background:#6f7d95; }}
@@ -225,7 +227,13 @@ st.markdown(f"""
     .confidence.high {{ background:#d9f5e6; color:var(--success); }}
     .confidence.med {{ background:#fff0c7; color:#b97900; }}
     .confidence.low {{ background:#edf2f7; color:#52617a; }}
-    .scale-row {{ display:grid; grid-template-columns:126px 1fr 108px; gap:12px; color:#65758b; font-weight:800; font-size:.7rem; margin:0 0 10px; }}
+    .stage-pill {{ display:inline-block; border-radius:4px; padding:3px 7px; font-size:.67rem; font-weight:900; text-align:center; text-transform:uppercase; }}
+    .stage-pill.emerging {{ background:#e8f7ef; color:var(--success); }}
+    .stage-pill.accelerating {{ background:#dff2fb; color:#078db8; }}
+    .stage-pill.peak {{ background:#fff0c7; color:#b97900; }}
+    .stage-pill.plateau {{ background:#edf2f7; color:#52617a; }}
+    .stage-pill.declining, .stage-pill.dead {{ background:#ffe5e5; color:var(--danger); }}
+    .scale-row {{ display:grid; grid-template-columns:126px 1fr 176px; gap:12px; color:#65758b; font-weight:800; font-size:.7rem; margin:0 0 10px; }}
     .scale-labels {{ display:flex; justify-content:space-between; }}
     .why-box {{ background:{INFO_BG}; border-left:4px solid var(--accent); border-radius:4px; padding:12px 14px; color:#27354a; font-size:.8rem; line-height:1.38; margin-bottom:14px; }}
     .why-box b:first-child {{ color:var(--accent); letter-spacing:.08em; font-size:.68rem; margin-right:7px; }}
@@ -431,6 +439,33 @@ def _money(value) -> str:
     return f"${float(value):,.0f}"
 
 
+def _price_range_bounds(products: pd.DataFrame, variants: pd.DataFrame) -> tuple[int, int] | None:
+    sources = []
+    for source in (variants, products):
+        if not source.empty and "current_price" in source.columns:
+            prices = pd.to_numeric(source["current_price"], errors="coerce").dropna()
+            if not prices.empty:
+                sources.append(prices)
+    if not sources:
+        return None
+
+    all_prices = pd.concat(sources)
+    min_price = int(np.floor(float(all_prices.min()) / 5) * 5)
+    max_price = int(np.ceil(float(all_prices.max()) / 5) * 5)
+    if max_price < min_price:
+        return None
+    return min_price, max_price
+
+
+def _filter_by_price_range(source: pd.DataFrame, price_range: tuple[int, int]) -> pd.DataFrame:
+    if source.empty or "current_price" not in source.columns:
+        return source
+    low, high = price_range
+    work = source.copy()
+    prices = pd.to_numeric(work["current_price"], errors="coerce")
+    return work[prices.between(low, high, inclusive="both")]
+
+
 def _num(value) -> str:
     try:
         value = float(value)
@@ -508,36 +543,80 @@ def _attribute_rows(source: pd.DataFrame, attr: str, top_n: int = 6) -> list[dic
     return rows
 
 
-def _price_band_label(price: float) -> str:
+def _price_band_config(source: pd.DataFrame) -> list[tuple[str, float | None, str]]:
+    if source.empty or "current_price" not in source.columns:
+        return [
+            ("<$20", 20, "Under"),
+            ("$20-24", 24, "Value"),
+            ("$24-32", 32, "Sweet"),
+            ("$32-45", 45, "Premium"),
+            ("$45-60", 60, "High"),
+            (">$60", None, "Luxury"),
+        ]
+
+    categories = set(source.get("category", pd.Series(dtype=str)).dropna().astype(str))
+    median = pd.to_numeric(source.get("current_price"), errors="coerce").dropna().median()
+    if "womens_dresses" in categories or (pd.notna(median) and float(median) >= 75):
+        return [
+            ("<$50", 50, "Entry"),
+            ("$50-100", 100, "Value"),
+            ("$100-150", 150, "Core"),
+            ("$150-250", 250, "Premium"),
+            ("$250-400", 400, "High"),
+            (">$400", None, "Luxury"),
+        ]
+
+    return [
+        ("<$20", 20, "Under"),
+        ("$20-24", 24, "Value"),
+        ("$24-32", 32, "Sweet"),
+        ("$32-45", 45, "Premium"),
+        ("$45-60", 60, "High"),
+        (">$60", None, "Luxury"),
+    ]
+
+
+def _price_band_label(price: float, bands: list[tuple[str, float | None, str]] = None) -> str:
     if pd.isna(price):
         return "Unknown"
     price = float(price)
-    if price < 20:
-        return "<$20"
-    if price < 24:
-        return "$20-24"
-    if price < 32:
-        return "$24-32"
-    if price < 45:
-        return "$32-45"
-    if price < 60:
-        return "$45-60"
-    return ">$60"
+    bands = bands or _price_band_config(pd.DataFrame())
+    for label, upper, _ in bands:
+        if upper is None or price < upper:
+            return label
+    return bands[-1][0]
 
 
 def _best_price_band(source: pd.DataFrame) -> tuple[str, float]:
     if source.empty or "current_price" not in source.columns:
-        return "$24-$32", 3.2
+        return "$24-32", 1.0
     work = source.dropna(subset=["current_price"]).copy()
     if work.empty:
-        return "$24-$32", 3.2
-    work["band"] = work["current_price"].apply(_price_band_label)
+        return "$24-32", 1.0
+    if "product_id" in work.columns:
+        # Product reviews are product-level. When this function receives SKU rows,
+        # dedupe first so one product with many colors/sizes does not multiply demand.
+        work = work.sort_values("review_count", ascending=False).drop_duplicates("product_id")
+    bands_cfg = _price_band_config(work)
+    bands = [b[0] for b in bands_cfg]
+    work["band"] = work["current_price"].apply(lambda p: _price_band_label(p, bands_cfg))
     work["weight"] = pd.to_numeric(work.get("review_count", 0), errors="coerce").fillna(0)
     if work["weight"].sum() == 0:
         work["weight"] = 1
-    band = work.groupby("band")["weight"].sum().sort_values(ascending=False).index[0]
-    share = work.groupby("band")["weight"].sum().max() / max(work["weight"].sum(), 1)
-    return band.replace("-", "-$") if band.startswith("$") and "-$" not in band else band, max(1.1, round(share * 8, 1))
+    totals = work.groupby("band")["weight"].sum().reindex(bands, fill_value=0)
+    band = totals.idxmax()
+    idx = bands.index(band)
+    adjacent = []
+    if idx > 0:
+        adjacent.append(float(totals.iloc[idx - 1]))
+    if idx < len(bands) - 1:
+        adjacent.append(float(totals.iloc[idx + 1]))
+    adjacent_avg = sum(adjacent) / len(adjacent) if adjacent else 0
+    if adjacent_avg <= 0:
+        adjacent_avg = max((float(totals.sum()) - float(totals.loc[band])) / max(len(bands) - 1, 1), 1)
+    multiplier = max(1.0, round(float(totals.loc[band]) / max(adjacent_avg, 1), 1))
+    multiplier = min(multiplier, 9.9)
+    return band, multiplier
 
 
 def _top_skus(products: pd.DataFrame, variants: pd.DataFrame, n: int = 4) -> pd.DataFrame:
@@ -548,9 +627,8 @@ def _top_skus(products: pd.DataFrame, variants: pd.DataFrame, n: int = 4) -> pd.
     work["rating_score"] = pd.to_numeric(work.get("rating", 0), errors="coerce").fillna(0)
     work["review_score"] = pd.to_numeric(work.get("review_count", 0), errors="coerce").fillna(0)
     work["score"] = work["review_score"] * 0.75 + work["rating_score"] * 150
-    dedupe_cols = [c for c in ["product_id", "color"] if c in work.columns]
-    if dedupe_cols:
-        work = work.sort_values("score", ascending=False).drop_duplicates(dedupe_cols)
+    if "product_id" in work.columns:
+        work = work.sort_values("score", ascending=False).drop_duplicates("product_id")
     return work.sort_values("score", ascending=False).head(n).reset_index(drop=True)
 
 
@@ -559,6 +637,7 @@ def _sku_cards_html(products: pd.DataFrame, variants: pd.DataFrame) -> str:
     cards = []
     for idx, row in rows.iterrows():
         title = _safe(row.get("title", "Product"))
+        url = _safe(row.get("url"))
         color = _label(row.get("color") or row.get("color_family"), "Core")
         size = _label(row.get("size"), "Size mix")
         meta_bits = [
@@ -574,13 +653,16 @@ def _sku_cards_html(products: pd.DataFrame, variants: pd.DataFrame) -> str:
         cards.append(f"""
 <div class="sku-card">
   <div class="sku-swatch" style="background:{swatch};">
-    <span class="rank-badge">#{idx + 1}</span>
+    <a class="rank-badge" href="{url}" target="_blank" rel="noopener noreferrer">#{idx + 1}</a>
   </div>
   <div class="sku-copy">
     <div class="sku-title">{title} — {_safe(color)}</div>
     <div class="sku-meta">{meta}</div>
     <div class="sku-foot">
-      <div class="sku-price">{_money(row.get("current_price"))}</div>
+      <div>
+        <div class="sku-price">{_money(row.get("current_price"))}</div>
+        <div style="color:{MUTED};font-size:.68rem;font-weight:700;line-height:1;">scraped price</div>
+      </div>
       <div class="sku-reviews">{_safe(platform)} · {reviews} reviews</div>
     </div>
   </div>
@@ -624,8 +706,8 @@ def _attribute_panel_html(products: pd.DataFrame, variants: pd.DataFrame) -> str
     color_source = variants if not variants.empty else products
     sections = {
         "color": _attribute_section_html(
-            "Color · top 6",
-            _attribute_rows(color_source, "color", 6),
+            "Color Family · top 6",
+            _attribute_rows(color_source, "color_family", 6),
             True,
             "Share by variant SKU",
         ),
@@ -698,15 +780,16 @@ def _price_panel_html(products: pd.DataFrame) -> str:
     work = products.dropna(subset=["current_price"]).copy()
     if work.empty:
         return ""
-    work["band"] = work["current_price"].apply(_price_band_label)
+    bands_cfg = _price_band_config(work)
+    bands = [b[0] for b in bands_cfg]
+    work["band"] = work["current_price"].apply(lambda p: _price_band_label(p, bands_cfg))
     work["group"] = work["platform"].fillna("marketplace").str.title() + " — " + work["category"].fillna("All").str.replace("_", " ").str.title()
     work["weight"] = pd.to_numeric(work["review_count"], errors="coerce").fillna(0)
     if work["weight"].sum() == 0:
         work["weight"] = 1
-    bands = ["<$20", "$20-24", "$24-32", "$32-45", "$45-60", ">$60"]
     header = '<div></div>' + ''.join(
         f'<div class="price-head">{b}<small>{s}</small></div>'
-        for b, s in zip(bands, ["Under", "Value", "Sweet", "Premium", "High", "Luxury"])
+        for b, _, s in bands_cfg
     )
     rows = []
     for group, grp in work.groupby("group"):
@@ -741,7 +824,7 @@ def _platform_panel_html(products: pd.DataFrame) -> str:
   <div class="kv-row"><span>Top color</span><strong>{_safe(top_color.iloc[0,0]) if not top_color.empty else "N/A"} <span class="good">{int(top_color.iloc[0,1] / max(len(grp), 1) * 100) if not top_color.empty else 0}%</span></strong></div>
   <div class="kv-row"><span>Top fit</span><strong>{_safe(top_fit.iloc[0,0]) if not top_fit.empty else "N/A"} <span class="good">{int(top_fit.iloc[0,1] / max(len(grp), 1) * 100) if not top_fit.empty else 0}%</span></strong></div>
   <div class="kv-row"><span>Top material</span><strong>{_safe(top_material.iloc[0,0]) if not top_material.empty else "N/A"}</strong></div>
-  <div class="kv-row"><span>Avg reviews / SKU</span><strong>{_num(avg_reviews)}</strong></div>
+  <div class="kv-row"><span>Avg reviews / product</span><strong>{_num(avg_reviews)}</strong></div>
 </div>""")
     return f'<div class="compare-grid">{"".join(boxes)}</div>'
 
@@ -839,6 +922,21 @@ def _signal_band_html(ctx: dict) -> str:
 </div>"""
 
 
+_LIFECYCLE_LABELS = {
+    "emerging":     "Emerging",
+    "accelerating": "Accelerating",
+    "peak":         "Peak",
+    "plateau":      "Plateau",
+    "declining":    "Declining",
+    "dead":         "Dead",
+}
+
+
+def _stage_key(stage: str) -> str:
+    raw = str(stage or "plateau").strip().lower()
+    return raw if raw in _LIFECYCLE_LABELS else "plateau"
+
+
 def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str = None, limit: int = 7) -> list[dict]:
     rows = []
     if not scores.empty:
@@ -849,13 +947,25 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
         if sort_col in work.columns:
             work = work.sort_values(sort_col, ascending=False)
         for _, row in work.head(limit).iterrows():
-            change = row.get("review_growth_pct")
-            if pd.isna(change):
-                change = float(row.get("momentum_score") or 0) * 10
+            weeks_observed = int(row.get("weeks_observed") or 0)
+            latest_share = float(row.get("latest_week_share") or 0)
+            previous_share = float(row.get("previous_week_share") or 0)
+            if weeks_observed >= 2:
+                change = (latest_share - previous_share) * 100
+            else:
+                change = row.get("review_growth_pct")
+                if pd.isna(change):
+                    change = float(row.get("momentum_score") or 0) * 10
             rows.append({
                 "name": str(row.get("attr_value") or row.get("attr_key") or "Signal"),
                 "change": int(round(float(change))),
                 "confidence": "High" if abs(float(change)) >= 14 else "Med" if abs(float(change)) >= 8 else "Low",
+                "stage": _stage_key(row.get("lifecycle_stage")),
+                "action": row.get("retailer_action") or "",
+                "lifecycle_explanation": row.get("lifecycle_explanation") or "",
+                "weeks_observed": weeks_observed,
+                "latest_week_share": latest_share,
+                "previous_week_share": previous_share,
             })
     # TODO: Do not backfill forecasts from current attribute shares; use only prediction outputs.
     return rows[:limit]
@@ -877,17 +987,18 @@ def _forecast_rows_html(rows: list[dict]) -> str:
         else:
             left = max(6, 50 - magnitude)
             color = DANGER
-        conf = str(row.get("confidence", "Low")).lower()
-        conf_cls = "high" if "high" in conf else "med" if "med" in conf else "low"
+        stage = _stage_key(row.get("stage"))
+        stage_label = _LIFECYCLE_LABELS[stage]
+        action = row.get("action") or "Monitor weekly"
         html.append(f"""
 <div class="forecast-row">
-  <div class="forecast-name">{_safe(row["name"])}</div>
+  <div class="forecast-name"><b>{_safe(row["name"])}</b><span>{_safe(action)}</span></div>
   <div class="forecast-axis">
     <span class="forecast-bar" style="left:{left}%; width:{magnitude}%; background:{color};"></span>
     <span class="forecast-whisker" style="left:{max(2, min(96, 50 + change * 1.15))}%;"></span>
   </div>
   <div class="forecast-change {'pos' if change >= 0 else 'neg'}">{change:+d}%</div>
-  <div><span class="confidence {conf_cls}">{_safe(row.get("confidence", "Low"))}</span></div>
+  <div><span class="stage-pill {stage}">{_safe(stage_label)}</span></div>
 </div>""")
     return "".join(html)
 
@@ -937,7 +1048,9 @@ def _early_signal_html(rows: list[dict]) -> str:
         color = ACCENT if up else DANGER
         tag_cls = "" if up else "bad"
         title = _label(row.get("name", "Signal"))
-        copy = row.get("copy") or f"{title} is showing a measurable {'velocity gain' if up else 'velocity drop'} before broad-market consensus."
+        stage = _stage_key(row.get("stage"))
+        action = row.get("action") or "Monitor weekly"
+        copy = row.get("copy") or f"{title} is in {_LIFECYCLE_LABELS[stage].lower()} stage. Retail action: {action}."
         detected = row.get("first_detected_at") or row.get("age")
         detected_html = f'<div class="detected">DETECTED {_safe(detected)}</div>' if detected else ""
         html.append(f"""
@@ -946,7 +1059,7 @@ def _early_signal_html(rows: list[dict]) -> str:
   <div>
     <div class="early-title">{_safe(title)}</div>
     <div class="early-copy">{_safe(copy)}</div>
-    <div class="tag-row"><span class="tag {tag_cls}">{change:+d}% velocity</span><span class="tag info">{_safe(_visible_platform)}</span></div>
+    <div class="tag-row"><span class="tag {tag_cls}">{change:+d}% velocity</span><span class="tag info">{_safe(_LIFECYCLE_LABELS[stage])}</span></div>
   </div>
   {detected_html}
 </div>""")
@@ -987,13 +1100,45 @@ with tab1:
         st.info("No products in the database yet. Run the scraper first: `python scrape_runner.py`")
         st.stop()
 
-    kpis = get_kpis(df)
+    desc_df = df.copy()
+    desc_sku_df = sku_df.copy()
+    price_bounds = _price_range_bounds(desc_df, desc_sku_df)
+    if price_bounds:
+        min_price, max_price = price_bounds
+        if min_price < max_price:
+            price_col, count_col, _ = st.columns([1.25, 1.1, 4.65])
+            with price_col:
+                selected_price_range = st.slider(
+                    "Price",
+                    min_value=min_price,
+                    max_value=max_price,
+                    value=(min_price, max_price),
+                    step=5,
+                    format="$%d",
+                    key="descriptive_price_range",
+                )
+            desc_df = _filter_by_price_range(desc_df, selected_price_range)
+            desc_sku_df = _filter_by_price_range(desc_sku_df, selected_price_range)
+            with count_col:
+                st.caption(
+                    f"{_money(selected_price_range[0])}-{_money(selected_price_range[1])} · "
+                    f"{len(desc_sku_df) if not desc_sku_df.empty else len(desc_df):,} rows"
+                )
+        else:
+            st.caption(f"Price range: {_money(min_price)}")
+
+    if desc_df.empty and desc_sku_df.empty:
+        st.warning("No products match the selected price range. Showing the full descriptive view.")
+        desc_df = df.copy()
+        desc_sku_df = sku_df.copy()
+
+    kpis = get_kpis(desc_df)
     trend_scores_df = load_trend_scores(
         category=None if category_filter == "All" else category_filter,
         platform=None if platform_filter == "All" else platform_filter,
     )
 
-    ctx = _market_signal_context(df, sku_df, trend_scores_df)
+    ctx = _market_signal_context(desc_df, desc_sku_df, trend_scores_df)
     sku_count = ctx["sku_count"]
     band_label = ctx["band_label"]
     signal_html = _signal_band_html(ctx)
@@ -1004,9 +1149,9 @@ with tab1:
 <div class="mi-panel">
   <div class="panel-head">
     <div class="panel-title">Trending Styles · {_safe(category_title)}</div>
-    <div class="panel-sub">Top 4 of {sku_count:,} · ranked by review velocity + rating</div>
+    <div class="panel-sub">Top 4 unique products of {sku_count:,} SKU rows · ranked by reviews + rating</div>
   </div>
-  <div class="panel-body"><div class="style-grid">{_sku_cards_html(df, sku_df)}</div></div>
+  <div class="panel-body"><div class="style-grid">{_sku_cards_html(desc_df, desc_sku_df)}</div></div>
 </div>"""
 
     price_html = f"""
@@ -1016,7 +1161,7 @@ with tab1:
     <div class="panel-sub">Share of converting reviews · {escape(window_filter.lower())}</div>
   </div>
   <div class="panel-body">
-    {_price_panel_html(df)}
+    {_price_panel_html(desc_df)}
     <div class="insight"><b>INSIGHT</b>Converting corridor sits at <strong>{_safe(band_label)}</strong>. Platform medians show where the same category can support premium positioning.</div>
   </div>
 </div>"""
@@ -1027,7 +1172,7 @@ with tab1:
     <div class="panel-title">Platform Comparison · Same Category</div>
     <div class="panel-sub">Where each platform over-indexes</div>
   </div>
-  {_platform_panel_html(df)}
+  {_platform_panel_html(desc_df)}
 </div>"""
 
     attribute_html = f"""
@@ -1036,7 +1181,7 @@ with tab1:
     <div class="panel-title">Attribute Performance</div>
     <div class="panel-sub">Share of converting reviews</div>
   </div>
-  <div class="panel-body">{_attribute_panel_html(df, sku_df)}</div>
+  <div class="panel-body">{_attribute_panel_html(desc_df, desc_sku_df)}</div>
 </div>"""
 
     # TODO: Re-add regional, sentiment, and sales-velocity panels when the backend stores those signals.
@@ -1207,12 +1352,31 @@ with tab3:
         attr_rows = _forecast_source(df, trend_scores_df, limit=7)
         price_rows = _price_momentum_rows(df)
         whitespace_rows = sorted(attr_rows, key=lambda r: r["change"], reverse=True)
-        early_rows = [{"name": r["name"], "change": r["change"]} for r in attr_rows[:5]]
+        early_rows = [
+            {
+                "name": r["name"],
+                "change": r["change"],
+                "stage": r.get("stage"),
+                "action": r.get("action"),
+            }
+            for r in attr_rows[:5]
+        ]
         forecast_context = (
-            f'{_safe(_label(ctx["rising_attr"]))} has the strongest backend trend score for the active filters.'
+            f'{_safe(_label(ctx["rising_attr"]))} has the strongest backend trend score; each attribute is now mapped to a weekly lifecycle stage and retailer action.'
             if attr_rows else
             "Backend forecast rows are not available for the active filters yet."
         )
+        max_weeks = max((int(r.get("weeks_observed") or 0) for r in attr_rows), default=0)
+        if attr_rows and max_weeks < 2:
+            forecast_context = (
+                "Snapshot baseline mode from scraped_at: fewer than 3 weekly scrape points exist, "
+                "so lifecycle actions are inferred from current momentum until weekly history builds."
+            )
+        elif attr_rows and max_weeks < 3:
+            forecast_context = (
+                "Two-week comparison mode from scraped_at: current scrape week is compared with the previous scrape week; "
+                "full lifecycle curve starts after 3 weekly points."
+            )
 
         st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
 
@@ -1237,8 +1401,8 @@ with tab3:
   <div class="forecast-left">
     <div class="mi-panel">
       <div class="panel-head">
-        <div class="panel-title">Attribute Forecast · Next 30 Days</div>
-        <div class="panel-sub">Direction · range · confidence</div>
+        <div class="panel-title">Trend Lifecycle Forecast · Weekly</div>
+        <div class="panel-sub">Emerging → accelerating → peak → plateau → declining → dead</div>
       </div>
       <div class="panel-body">
         <div class="why-box"><b>WHY</b>{forecast_context}</div>

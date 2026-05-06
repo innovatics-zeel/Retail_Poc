@@ -35,7 +35,8 @@ Evidence: <cite 2-3 numbers directly from the evidence block>
 Impact: <expected business outcome within 4-8 weeks>
 Confidence: <High / Medium / Low>
 
-Rules: no generic advice, cite numbers, each section ≤ 30 words.\
+Rules: no generic advice, cite numbers, each section ≤ 30 words. If evidence includes
+lifecycle_stage or retailer_action, make the Action follow that lifecycle instruction.\
 """
 
 

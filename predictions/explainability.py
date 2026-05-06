@@ -24,6 +24,8 @@ def _build_explanation(row: dict) -> str:
     reviews    = int(row.get("review_count") or 0)
     platform   = row.get("platform", "")
     category   = (row.get("category") or "").replace("_", " ")
+    stage      = (row.get("lifecycle_stage") or "").replace("_", " ")
+    action     = row.get("retailer_action") or ""
 
     evidence: list[str] = []
 
@@ -56,7 +58,8 @@ def _build_explanation(row: dict) -> str:
     if len(evidence) > 2:
         joined += f", {evidence[2]}"
 
-    return f"{attr_val} {verb} because {joined}."
+    suffix = f" Lifecycle stage: {stage}; retailer action: {action}." if stage and action else ""
+    return f"{attr_val} {verb} because {joined}.{suffix}"
 
 
 def generate_all() -> int:

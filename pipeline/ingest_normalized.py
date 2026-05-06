@@ -9,6 +9,7 @@ Table write order:
 """
 import json
 import re
+from datetime import datetime, timezone
 from typing import Optional
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from database.models import (
     Brand, Category, Color, Size, Material, NeckType, SleeveType, Fit, Pattern,
     Product, ProductVariant, Review,
 )
+
+MAX_REALISTIC_REVIEW_COUNT = 1_000_000
 
 # ── Color-family mapping ──────────────────────────────────────────────────────
 # Keywords are matched as substrings (case-insensitive) in the color name.
@@ -127,8 +130,21 @@ def _get_or_create_product(
     brand_id: Optional[int],
     category_id: Optional[int],
 ) -> int:
+    image = values.get("image")
     obj = db.query(Product).filter_by(url=values["url"]).first()
     if obj:
+        obj.platform_id = values.get("platform_id") or obj.platform_id
+        obj.brand_id = brand_id
+        obj.category_id = category_id
+        obj.title = values["title"]
+        if isinstance(image, bytes):
+            obj.image = image
+        obj.material = values.get("material")
+        obj.neck_type = values.get("neck_type")
+        obj.sleeve_type = values.get("sleeve_type")
+        obj.fit = values.get("fit")
+        obj.pattern = values.get("pattern")
+        obj.care = values.get("care_instructions")
         return obj.product_id
 
     url = values.get("url", "")
@@ -148,6 +164,7 @@ def _get_or_create_product(
         title=values["title"],
         url=url,
         platform_item_id=platform_item_id,
+        image=image if isinstance(image, bytes) else None,
         material=values.get("material"),
         neck_type=values.get("neck_type"),
         sleeve_type=values.get("sleeve_type"),
@@ -169,6 +186,29 @@ def _parse_price_text(text: Optional[str]) -> Optional[float]:
     return round(float(m.group(0)), 2) if m else None
 
 
+def _normalize_price(
+    value: Optional[float],
+    platform_id: Optional[int],
+    category_name: Optional[str] = None,
+) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    if price <= 0:
+        return None
+    # Amazon sometimes exposes whole/cents DOM text as a shifted value
+    # (e.g. 4695.62 for an apparel price around 46.96). Correct the
+    # obvious apparel outliers at ingest time.
+    if platform_id == 1 and price > 500:
+        price = price / 100
+    if platform_id == 1 and category_name == "mens_tshirts" and price > 150:
+        price = price / 10
+    return round(price, 2)
+
+
 def _insert_variant(
     db: Session,
     product_id: int,
@@ -185,6 +225,15 @@ def _insert_variant(
     if orig_price is None:
         orig_price = _parse_price_text(entry.get("original_price_text"))
 
+    platform_id, category_name = (
+        db.query(Product.platform_id, Category.name)
+        .outerjoin(Category, Category.category_id == Product.category_id)
+        .filter(Product.product_id == product_id)
+        .one()
+    )
+    price = _normalize_price(price, platform_id, category_name)
+    orig_price = _normalize_price(orig_price, platform_id, category_name)
+
     stock_text = entry.get("stock_text") or entry.get("stock_note") or ""
     is_available = entry.get("available")
     if is_available is None:
@@ -196,34 +245,54 @@ def _insert_variant(
     if discount_pct is None and price and orig_price and orig_price > price:
         discount_pct = round((orig_price - price) / orig_price * 100, 2)
 
-    db.add(ProductVariant(
-        product_id=product_id,
-        color_id=color_id,
-        size_id=size_id,
-        material_id=attr_ids.get("material_id"),
-        neck_type_id=attr_ids.get("neck_type_id"),
-        sleeve_type_id=attr_ids.get("sleeve_type_id"),
-        fit_id=attr_ids.get("fit_id"),
-        pattern_id=attr_ids.get("pattern_id"),
-        is_available=bool(is_available),
-        price=price,
-        original_price=orig_price,
-        discount_pct=discount_pct,
-        currency="USD",
-        low_stock=low_stock,
-        stock_note=stock_text[:200] if stock_text else None,
-    ))
+    query = db.query(ProductVariant).filter(ProductVariant.product_id == product_id)
+    query = query.filter(ProductVariant.color_id.is_(None) if color_id is None else ProductVariant.color_id == color_id)
+    query = query.filter(ProductVariant.size_id.is_(None) if size_id is None else ProductVariant.size_id == size_id)
+    variant = query.order_by(ProductVariant.scraped_at.desc(), ProductVariant.variant_id.desc()).first()
+
+    values = {
+        "product_id": product_id,
+        "color_id": color_id,
+        "size_id": size_id,
+        "material_id": attr_ids.get("material_id"),
+        "neck_type_id": attr_ids.get("neck_type_id"),
+        "sleeve_type_id": attr_ids.get("sleeve_type_id"),
+        "fit_id": attr_ids.get("fit_id"),
+        "pattern_id": attr_ids.get("pattern_id"),
+        "is_available": bool(is_available),
+        "price": price,
+        "original_price": orig_price,
+        "discount_pct": discount_pct,
+        "currency": "USD",
+        "low_stock": low_stock,
+        "stock_note": stock_text[:200] if stock_text else None,
+        "scraped_at": datetime.now(timezone.utc),
+    }
+    if variant is None:
+        variant = ProductVariant(**values)
+        db.add(variant)
+        db.flush()
+    else:
+        for key, value in values.items():
+            setattr(variant, key, value)
+        db.flush()
 
 
 def _insert_review(db: Session, product_id: int, review_data: dict) -> None:
     star = review_data.get("star_distribution", {})
     pros = review_data.get("pros")
     cons = review_data.get("cons")
+    try:
+        review_count = int(review_data.get("review_count") or 0)
+    except (TypeError, ValueError):
+        review_count = 0
+    if review_count < 0 or review_count >= MAX_REALISTIC_REVIEW_COUNT:
+        review_count = 0
 
     db.add(Review(
         product_id=product_id,
         rating_avg=review_data.get("rating"),
-        review_count=min(int(review_data.get("review_count") or 0), 2_147_483_647),
+        review_count=review_count,
         fit_feedback=review_data.get("fit"),
         stars_1_pct=star.get("1") or star.get(1),
         stars_2_pct=star.get("2") or star.get(2),

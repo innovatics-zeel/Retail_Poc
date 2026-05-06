@@ -10,14 +10,30 @@ from sqlalchemy import text
 sys.path.insert(0, ".")
 from database.connection import SessionLocal
 
+MAX_REALISTIC_REVIEW_COUNT = 1_000_000
+
 
 def _session():
     return SessionLocal()
 
 
+def _clean_review_count(value) -> int:
+    try:
+        count = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return count if 0 <= count < MAX_REALISTIC_REVIEW_COUNT else 0
+
+
 # ── Main product query (joins all 7 normalized tables) ────────────────────────
 
 _LOAD_SQL = """
+WITH current_variants AS (
+    SELECT DISTINCT ON (product_id, color_id, size_id)
+        *
+    FROM product_variants
+    ORDER BY product_id, color_id, size_id, scraped_at DESC, variant_id DESC
+)
 SELECT
     p.product_id,
     p.title,
@@ -64,7 +80,7 @@ LEFT JOIN LATERAL (
     ORDER BY scraped_at DESC
     LIMIT 1
 ) r ON TRUE
-LEFT JOIN product_variants pv ON pv.product_id = p.product_id
+LEFT JOIN current_variants pv ON pv.product_id = p.product_id
 LEFT JOIN colors c            ON c.color_id    = pv.color_id
 LEFT JOIN sizes  s            ON s.size_id     = pv.size_id
 LEFT JOIN materials mat       ON mat.material_id   = pv.material_id
@@ -105,7 +121,7 @@ def load_products(platform: str = None, category: str = None) -> pd.DataFrame:
             for col in ("current_price", "original_price", "discount_pct", "rating"):
                 v = rec.get(col)
                 rec[col] = float(v) if v is not None else None
-            rec["review_count"] = int(rec["review_count"]) if rec.get("review_count") else 0
+            rec["review_count"] = _clean_review_count(rec.get("review_count"))
             records.append(rec)
 
         return pd.DataFrame(records)
@@ -114,6 +130,12 @@ def load_products(platform: str = None, category: str = None) -> pd.DataFrame:
 
 
 _VARIANT_SQL = """
+WITH current_variants AS (
+    SELECT DISTINCT ON (product_id, color_id, size_id)
+        *
+    FROM product_variants
+    ORDER BY product_id, color_id, size_id, scraped_at DESC, variant_id DESC
+)
 SELECT
     pv.variant_id,
     pv.product_id,
@@ -153,7 +175,7 @@ SELECT
     r.stars_3_pct,
     r.stars_4_pct,
     r.stars_5_pct
-FROM product_variants pv
+FROM current_variants pv
 JOIN products p          ON p.product_id    = pv.product_id
 JOIN platforms pl        ON pl.id           = p.platform_id
 LEFT JOIN brands b       ON b.brand_id      = p.brand_id
@@ -201,7 +223,7 @@ def load_variant_skus(platform: str = None, category: str = None) -> pd.DataFram
             for col in ("current_price", "original_price", "discount_pct", "rating"):
                 v = rec.get(col)
                 rec[col] = float(v) if v is not None else None
-            rec["review_count"] = int(rec["review_count"]) if rec.get("review_count") else 0
+            rec["review_count"] = _clean_review_count(rec.get("review_count"))
             records.append(rec)
         return pd.DataFrame(records)
     finally:
@@ -321,8 +343,12 @@ def load_trend_scores(category: str = None, platform: str = None,
             return pd.DataFrame()
         df = pd.DataFrame([dict(r) for r in rows])
         for col in ("momentum_score", "avg_rating", "category_avg_rating",
-                    "rating_delta", "review_growth_pct"):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+                    "rating_delta", "review_growth_pct", "latest_week_share",
+                    "previous_week_share"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        if "weeks_observed" in df.columns:
+            df["weeks_observed"] = pd.to_numeric(df["weeks_observed"], errors="coerce").fillna(0).astype(int)
         return df
     finally:
         db.close()

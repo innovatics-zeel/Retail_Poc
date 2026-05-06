@@ -2,8 +2,8 @@
 pattern_detector.py — Rules engine that finds actionable patterns in trend_scores.
 
 Pattern types:
-  1. emerging_star       — high momentum + high rating + above-avg review count
-  2. declining_attribute — negative momentum + below-avg rating
+  1. emerging_star       — emerging/accelerating lifecycle + high rating/reviews
+  2. declining_attribute — declining/dead lifecycle + below-avg rating
   3. underserved_niche   — high rating but low product count (opportunity gap)
   4. review_leader       — review count >> category average (validated attribute)
   5. cross_platform_gap  — trending on one platform, absent/weak on the other
@@ -30,8 +30,10 @@ def load_trend_scores() -> pd.DataFrame:
             return pd.DataFrame()
         df = pd.DataFrame([dict(r) for r in rows])
         for col in ("momentum_score", "avg_rating", "category_avg_rating",
-                    "rating_delta", "review_growth_pct", "new_product_share"):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+                    "rating_delta", "review_growth_pct", "new_product_share",
+                    "latest_week_share", "previous_week_share"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
         return df
     finally:
         db.close()
@@ -42,10 +44,15 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
         return []
 
     patterns: list[dict] = []
+    if "lifecycle_stage" not in df.columns:
+        df["lifecycle_stage"] = ""
+    if "retailer_action" not in df.columns:
+        df["retailer_action"] = ""
+    lifecycle = df["lifecycle_stage"].fillna("").str.lower()
 
     # ── 1. Emerging Star ──────────────────────────────────────────
     stars = df[
-        (df["momentum_score"] > 0.20) &
+        (lifecycle.isin(["emerging", "accelerating"]) | (df["momentum_score"] > 0.20)) &
         (df["avg_rating"] >= 4.2) &
         (df["review_count"] > df["review_count"].quantile(0.5))
     ]
@@ -55,12 +62,14 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
             "avg_rating":     float(r["avg_rating"]),
             "review_count":   int(r["review_count"]),
             "rating_delta":   float(r["rating_delta"]),
+            "lifecycle_stage": str(r.get("lifecycle_stage") or ""),
+            "retailer_action": str(r.get("retailer_action") or ""),
             "explanation":    r.get("explanation") or "",
         }))
 
     # ── 2. Declining Attribute ─────────────────────────────────────
     declining = df[
-        (df["momentum_score"] < -0.10) &
+        (lifecycle.isin(["declining", "dead"]) | (df["momentum_score"] < -0.10)) &
         (df["avg_rating"] < df["category_avg_rating"].fillna(df["avg_rating"]))
     ]
     for _, r in declining.head(2).iterrows():
@@ -68,6 +77,8 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
             "momentum_score":      float(r["momentum_score"]),
             "avg_rating":          float(r["avg_rating"]),
             "category_avg_rating": float(r.get("category_avg_rating") or 0),
+            "lifecycle_stage":     str(r.get("lifecycle_stage") or ""),
+            "retailer_action":     str(r.get("retailer_action") or ""),
             "explanation":         r.get("explanation") or "",
         }))
 
@@ -81,6 +92,8 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
         patterns.append(_make(r, "underserved_niche", {
             "avg_rating":    float(r["avg_rating"]),
             "product_count": int(r["product_count"]),
+            "lifecycle_stage": str(r.get("lifecycle_stage") or ""),
+            "retailer_action": str(r.get("retailer_action") or ""),
             "explanation":   r.get("explanation") or "",
         }))
 
@@ -94,6 +107,8 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
             "review_count":      int(r["review_count"]),
             "cat_avg_reviews":   round(float(r["cat_avg_reviews"]), 1),
             "avg_rating":        float(r["avg_rating"]),
+            "lifecycle_stage":   str(r.get("lifecycle_stage") or ""),
+            "retailer_action":   str(r.get("retailer_action") or ""),
             "explanation":       r.get("explanation") or "",
         }))
 
@@ -124,6 +139,8 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
                                 "weak_platform":   weak,
                                 "weak_score":      round(float(scores_by_plat[weak]), 3),
                                 "score_gap":       round(gap, 3),
+                                "lifecycle_stage": str(val_rows.iloc[0].get("lifecycle_stage") or ""),
+                                "retailer_action": str(val_rows.iloc[0].get("retailer_action") or ""),
                             },
                         })
 
@@ -134,6 +151,8 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
             "avg_rating":          float(r["avg_rating"]),
             "category_avg_rating": float(r.get("category_avg_rating") or 0),
             "rating_delta":        float(r["rating_delta"]),
+            "lifecycle_stage":     str(r.get("lifecycle_stage") or ""),
+            "retailer_action":     str(r.get("retailer_action") or ""),
             "explanation":         r.get("explanation") or "",
         }))
 

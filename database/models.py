@@ -1,4 +1,16 @@
-from sqlalchemy import Column, Integer, SmallInteger, String, Text, Numeric, DateTime, Boolean, ForeignKey, JSON
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    JSON,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from database.connection import Base
@@ -121,6 +133,7 @@ class Product(Base):
     title            = Column(Text, nullable=False)
     url              = Column(Text, nullable=False, unique=True)
     platform_item_id = Column(String(100), nullable=True)
+    image            = Column(LargeBinary, nullable=True)
     material         = Column(Text, nullable=True)
     neck_type        = Column(String(100), nullable=True)
     sleeve_type      = Column(String(100), nullable=True)
@@ -173,6 +186,7 @@ class Review(Base):
     stars_5_pct  = Column(SmallInteger, nullable=True)
     pros         = Column(JSON, nullable=True)
     cons         = Column(JSON, nullable=True)
+    comment_json  = Column(JSONB, nullable=True)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
     scraped_at   = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -209,6 +223,12 @@ class TrendScore(Base):
     new_product_share   = Column(Numeric(6, 4),nullable=True)
     momentum_score      = Column(Numeric(8, 4),nullable=True)
     trend_direction     = Column(String(20),   nullable=True)
+    lifecycle_stage     = Column(String(20),   nullable=True)
+    retailer_action     = Column(Text,         nullable=True)
+    lifecycle_explanation = Column(Text,       nullable=True)
+    weeks_observed      = Column(Integer,      nullable=False, default=0)
+    latest_week_share   = Column(Numeric(6, 4),nullable=True)
+    previous_week_share = Column(Numeric(6, 4),nullable=True)
     explanation         = Column(Text,         nullable=True)
     computed_at         = Column(DateTime(timezone=True), server_default=func.now())
 
