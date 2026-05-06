@@ -98,7 +98,7 @@ _NORMALIZED_TABLES = {
                          "fit_id", "pattern_id",
                          "is_available", "price", "currency", "created_at", "scraped_at"},
     "reviews":          {"review_id", "product_id", "rating_avg", "review_count",
-                         "review_json", "created_at", "scraped_at"},
+                         "comment_json", "created_at", "scraped_at"},
 }
 
 _REQUIRED_SCHEMA = {

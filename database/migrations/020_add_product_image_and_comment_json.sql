@@ -1,5 +1,5 @@
 -- Store product image bytes directly on products.
--- Add a nullable reviews.review_json column for a later review-specific flow.
+-- Add a nullable reviews.comment_json column for a later comments-specific flow.
 -- The variant history/snapshot/insight tables are removed from this simplified flow.
 
 ALTER TABLE products
@@ -7,7 +7,7 @@ ALTER TABLE products
     ADD COLUMN IF NOT EXISTS image BYTEA;
 
 ALTER TABLE reviews
-    ADD COLUMN IF NOT EXISTS review_json JSONB;
+    ADD COLUMN IF NOT EXISTS comment_json JSONB;
 
 DROP TABLE IF EXISTS product_variant_insights CASCADE;
 DROP TABLE IF EXISTS product_variant_history CASCADE;
