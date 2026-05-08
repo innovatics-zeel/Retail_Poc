@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     scraper_max_retries: int   = Field(default=3)
     scraper_delay_min:   float = Field(default=2.0)
     scraper_delay_max:   float = Field(default=5.0)
+    amazon_email:        str   = Field(default="")
+    amazon_password:     str   = Field(default="")
 
     # ── AI / LLM ──────────────────────────────────────────────
     anthropic_api_key: str = Field(default="")

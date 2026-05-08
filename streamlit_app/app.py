@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore")
 
 sys.path.insert(0, ".")
 
+import base64
 from html import escape
 import streamlit as st
 import pandas as pd
@@ -124,10 +125,14 @@ st.markdown(f"""
     .panel-sub {{ color:var(--muted); font-size:.78rem; line-height:1.1; text-align:right; }}
     .panel-body {{ padding:14px 18px 16px; }}
     .style-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
-    .sku-card {{ border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#fff; min-height:146px; }}
-    .sku-swatch {{ height:70px; position:relative; background:#253a59; }}
-    .rank-badge, .heat-badge {{ position:absolute; top:9px; padding:3px 8px; border-radius:4px; font-size:.7rem; font-weight:900; line-height:1; }}
-    .rank-badge {{ left:10px; background:#fff; color:var(--ink); border:1px solid #d5dde8; }}
+    .sku-card {{ border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#fff; min-height:348px; }}
+    .sku-swatch {{ height:238px; position:relative; background:#f7f9fc; overflow:hidden; display:grid; place-items:center; }}
+    .sku-swatch.has-image {{ background:#fff !important; border-bottom:1px solid #edf2f6; }}
+    .sku-swatch img {{ width:100%; height:100%; object-fit:contain; object-position:center; display:block; }}
+    .sku-swatch .swatch-fill {{ position:absolute; inset:0; }}
+    .sku-color-strip {{ height:8px; border-bottom:1px solid #edf2f6; }}
+    .rank-badge, .heat-badge {{ padding:3px 8px; border-radius:4px; font-size:.7rem; font-weight:900; line-height:1; }}
+    .rank-badge {{ display:inline-flex; width:max-content; margin-bottom:8px; background:#fff; color:var(--ink); border:1px solid #d5dde8; }}
     .heat-badge {{ right:10px; background:var(--warning); color:var(--ink); }}
     .heat-badge.rising {{ background:var(--accent); color:#fff; }}
     .sku-copy {{ padding:11px 13px 10px; }}
@@ -439,6 +444,27 @@ def _money(value) -> str:
     return f"${float(value):,.0f}"
 
 
+def _image_data_uri(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    elif isinstance(value, bytearray):
+        value = bytes(value)
+    if not isinstance(value, bytes) or not value:
+        return ""
+
+    if value.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    elif value.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif value.startswith(b"RIFF") and value[8:12] == b"WEBP":
+        mime = "image/webp"
+    else:
+        mime = "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(value).decode('ascii')}"
+
+
 def _price_range_bounds(products: pd.DataFrame, variants: pd.DataFrame) -> tuple[int, int] | None:
     sources = []
     for source in (variants, products):
@@ -533,12 +559,15 @@ def _attribute_rows(source: pd.DataFrame, attr: str, top_n: int = 6) -> list[dic
     total = grouped["weight"].sum() or 1
     rows = []
     for idx, row in grouped.iterrows():
+        name = str(row[attr])
+        bar_color = _swatch_color(name, name) if attr in {"color", "color_family"} else _accent_for_index(idx)
         rows.append({
-            "name": str(row[attr]),
+            "name": name,
             "share": max(1, int(round(row["weight"] / total * 100))),
             # TODO: populate from trend_scores / historical scraped_at snapshots.
             "change": None,
-            "color": _accent_for_index(idx),
+            "color": bar_color,
+            "label_color": bar_color if attr in {"color", "color_family"} else None,
         })
     return rows
 
@@ -650,12 +679,23 @@ def _sku_cards_html(products: pd.DataFrame, variants: pd.DataFrame) -> str:
         platform = _label(row.get("platform"), "Marketplace")
         reviews = _num(row.get("review_count", 0))
         swatch = _swatch_color(row.get("color"), row.get("color_family"))
+        image_src = _image_data_uri(row.get("image"))
+        media_class = "sku-swatch has-image" if image_src else "sku-swatch"
+        media_style = "" if image_src else f"background:{swatch};"
+        color_strip = f'<div class="sku-color-strip" style="background:{swatch};"></div>' if image_src else ""
+        visual = (
+            f'<img src="{image_src}" alt="{title}">'
+            if image_src
+            else f'<div class="swatch-fill" style="background:{swatch};"></div>'
+        )
         cards.append(f"""
 <div class="sku-card">
-  <div class="sku-swatch" style="background:{swatch};">
-    <a class="rank-badge" href="{url}" target="_blank" rel="noopener noreferrer">#{idx + 1}</a>
+  <div class="{media_class}" style="{media_style}">
+    {visual}
   </div>
+  {color_strip}
   <div class="sku-copy">
+    <a class="rank-badge" href="{url}" target="_blank" rel="noopener noreferrer">#{idx + 1}</a>
     <div class="sku-title">{title} — {_safe(color)}</div>
     <div class="sku-meta">{meta}</div>
     <div class="sku-foot">
@@ -683,9 +723,10 @@ def _bars_html(rows: list[dict], include_swatch: bool = False) -> str:
         row_name = row["name"]
         row_share = row["share"]
         row_color = row.get("color", ACCENT)
+        label_style = f' style="color:{row["label_color"]};font-weight:900;"' if row.get("label_color") else ""
         html.append(f"""
 <div class="bar-row">
-  <div class="bar-name">{swatch}{_safe(row_name)}</div>
+  <div class="bar-name"{label_style}>{swatch}{_safe(row_name)}</div>
   <div class="bar-track"><div class="bar-fill" style="width:{min(100, row_share)}%; background:{row_color};"></div></div>
   <div class="bar-share">{row_share}%</div>
   <div class="bar-change {change_cls}">{change_html}</div>

@@ -282,6 +282,7 @@ class AmazonReview(BaseModel):
     review_summary: Optional[str] = None
     star_distribution: dict = Field(default_factory=dict)
     review_details: list = Field(default_factory=list)
+    comment_json: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _normalize_amazon_flat(data: dict) -> dict:
@@ -322,6 +323,7 @@ class RawAmazonMensTshirtPayload(BaseModel):
     platform: str = "amazon"
     url: str
     title: str
+    image: Optional[bytes] = None
     brand: Optional[str] = None
     category: str = "mens_tshirts"
     gender: str = "men"
@@ -351,6 +353,7 @@ class RawAmazonWomensDressPayload(BaseModel):
     platform: str = "amazon"
     url: str
     title: str
+    image: Optional[bytes] = None
     brand: Optional[str] = None
     category: str = "womens_dresses"
     gender: str = "women"
@@ -451,4 +454,3 @@ class WomensDressData(BaseModel):
     @classmethod
     def validate_currency(cls, v):
         return v.upper()
-

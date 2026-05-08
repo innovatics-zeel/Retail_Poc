@@ -25,6 +25,14 @@ def _clean_review_count(value) -> int:
     return count if 0 <= count < MAX_REALISTIC_REVIEW_COUNT else 0
 
 
+def _pickle_safe_image(value):
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, bytearray):
+        return bytes(value)
+    return value
+
+
 # ── Main product query (joins all 7 normalized tables) ────────────────────────
 
 _LOAD_SQL = """
@@ -39,6 +47,7 @@ SELECT
     p.title,
     p.url,
     p.platform_item_id,
+    p.image,
     COALESCE(STRING_AGG(DISTINCT mat.name, ', ' ORDER BY mat.name), p.material) AS material,
     COALESCE(STRING_AGG(DISTINCT nt.name,  ', ' ORDER BY nt.name),  p.neck_type) AS neck_type,
     COALESCE(STRING_AGG(DISTINCT st.name,  ', ' ORDER BY st.name),  p.sleeve_type) AS sleeve_type,
@@ -90,7 +99,7 @@ LEFT JOIN fits ft             ON ft.fit_id         = pv.fit_id
 LEFT JOIN patterns pat        ON pat.pattern_id    = pv.pattern_id
 {where}
 GROUP BY
-    p.product_id, p.title, p.url, p.platform_item_id, p.material,
+    p.product_id, p.title, p.url, p.platform_item_id, p.image, p.material,
     p.neck_type, p.sleeve_type, p.fit, p.pattern, p.care, p.scraped_at,
     pl.name, pl.display_name, b.name, cat.name, cat.gender,
     r.rating_avg, r.review_count,
@@ -118,6 +127,8 @@ def load_products(platform: str = None, category: str = None) -> pd.DataFrame:
         records = []
         for r in rows:
             rec = dict(r)
+            if "image" in rec:
+                rec["image"] = _pickle_safe_image(rec.get("image"))
             for col in ("current_price", "original_price", "discount_pct", "rating"):
                 v = rec.get(col)
                 rec[col] = float(v) if v is not None else None
@@ -143,6 +154,7 @@ SELECT
     p.title,
     p.url,
     p.platform_item_id,
+    p.image,
     COALESCE(mat.name, p.material)       AS material,
     COALESCE(nt.name, p.neck_type)       AS neck_type,
     COALESCE(st.name, p.sleeve_type)     AS sleeve_type,
@@ -220,6 +232,8 @@ def load_variant_skus(platform: str = None, category: str = None) -> pd.DataFram
         records = []
         for r in rows:
             rec = dict(r)
+            if "image" in rec:
+                rec["image"] = _pickle_safe_image(rec.get("image"))
             for col in ("current_price", "original_price", "discount_pct", "rating"):
                 v = rec.get(col)
                 rec[col] = float(v) if v is not None else None
