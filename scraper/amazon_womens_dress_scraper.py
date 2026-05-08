@@ -136,19 +136,40 @@ class AmazonWomensDressScraper(BaseScraper):
                     url = f"{LISTING_URL}&page={page_num}"
                     if not await self.safe_goto(page, url):
                         break
-                await self._scroll(page)
-                html = await page.content()
-                logger.debug(f"[AMZ-WD] page {page_num} HTML={len(html)} title={await page.title()!r}")
-                links = self._extract_links(html)
-                logger.info(f"[AMZ-WD] page {page_num} → {len(links)} links")
-                if not links:
-                    self._save_debug_html(html, page_num)
-                    break
-                product_urls.extend(links)
-                page_num += 1
-                await self.polite_delay()
+                try:
+                    await self._scroll(page)
+                    html = await page.content()
+                    logger.debug(f"[AMZ-WD] page {page_num} HTML={len(html)} title={await page.title()!r}")
+                    links = self._extract_links(html)
+                    logger.info(f"[AMZ-WD] page {page_num} → {len(links)} links")
+                    if not links:
+                        self._save_debug_html(html, page_num)
+                        break
+                    product_urls.extend(links)
+                    page_num += 1
+                    await self.polite_delay()
+                except Exception as e:
+                    err = str(e).lower()
+                    if any(k in err for k in ("closed", "disconnected", "target", "crash")):
+                        logger.warning(f"[AMZ-WD] Browser/page died on listing page {page_num}: {e}")
+                        if await self._restart_browser():
+                            try:
+                                await page.close()
+                            except Exception:
+                                pass
+                            page = await self.new_page()
+                            nav_url = f"{LISTING_URL}&page={page_num}" if page_num > 1 else LISTING_URL
+                            if not await self.safe_goto(page, nav_url):
+                                break
+                        else:
+                            break
+                    else:
+                        raise
         finally:
-            await page.close()
+            try:
+                await page.close()
+            except Exception:
+                pass
 
         product_urls = product_urls[:max_products]
         logger.info(f"[AMZ-WD] {len(product_urls)} URLs to scrape")

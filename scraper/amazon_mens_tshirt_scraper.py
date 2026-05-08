@@ -360,25 +360,19 @@ class AmazonMensTshirtScraper(BaseScraper):
                 if page:
                     await safe_close(page)
                     page = None
-                recoverable = any(
+                if attempt >= max_attempts - 1:
+                    return None
+                browser_crash = any(
                     token in err
-                    for token in (
-                        "closed",
-                        "disconnected",
-                        "target",
-                        "browser",
-                        "context",
-                        "navigation failed",
-                        "blocked product page",
-                        "missing product title",
-                    )
+                    for token in ("closed", "disconnected", "target", "browser", "context", "navigation failed")
                 )
-                if attempt < max_attempts - 1 and recoverable:
+                content_block = any(token in err for token in ("blocked product page", "missing product title"))
+                if browser_crash:
                     if not await self._restart_browser():
                         return None
-                    await asyncio.sleep(2 * (attempt + 1))
-                    continue
-                return None
+                elif not content_block:
+                    return None
+                await asyncio.sleep(2 * (attempt + 1))
             finally:
                 if page:
                     await safe_close(page)
@@ -982,8 +976,6 @@ class AmazonMensTshirtScraper(BaseScraper):
                 "page",
                 "navigation failed",
                 "could not load search page",
-                "blocked product page",
-                "missing product title",
             )
         )
 
