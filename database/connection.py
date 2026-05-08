@@ -96,7 +96,8 @@ _NORMALIZED_TABLES = {
     "product_variants": {"variant_id", "product_id", "color_id", "size_id",
                          "material_id", "neck_type_id", "sleeve_type_id",
                          "fit_id", "pattern_id",
-                         "is_available", "price", "currency", "created_at", "scraped_at"},
+                         "is_available", "price", "currency", "image", "image_url",
+                         "created_at", "scraped_at"},
     "reviews":          {"review_id", "product_id", "rating_avg", "review_count",
                          "comment_json", "created_at", "scraped_at"},
 }

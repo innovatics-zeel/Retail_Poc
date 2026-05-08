@@ -163,6 +163,8 @@ class ProductVariant(Base):
     original_price = Column(Numeric(10, 2), nullable=True)
     discount_pct   = Column(Numeric(5, 2), nullable=True)
     currency       = Column(String(3), nullable=False, default="USD")
+    image           = Column(LargeBinary, nullable=True)
+    image_url       = Column(Text, nullable=True)
     low_stock      = Column(Boolean, nullable=False, default=False)
     stock_note     = Column(String(200), nullable=True)
     created_at     = Column(DateTime(timezone=True), server_default=func.now())

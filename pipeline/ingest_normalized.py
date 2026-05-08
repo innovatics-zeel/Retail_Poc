@@ -245,6 +245,9 @@ def _insert_variant(
     if discount_pct is None and price and orig_price and orig_price > price:
         discount_pct = round((orig_price - price) / orig_price * 100, 2)
 
+    image = entry.get("image")
+    image_url = entry.get("image_url")
+
     query = db.query(ProductVariant).filter(ProductVariant.product_id == product_id)
     query = query.filter(ProductVariant.color_id.is_(None) if color_id is None else ProductVariant.color_id == color_id)
     query = query.filter(ProductVariant.size_id.is_(None) if size_id is None else ProductVariant.size_id == size_id)
@@ -268,6 +271,10 @@ def _insert_variant(
         "stock_note": stock_text[:200] if stock_text else None,
         "scraped_at": datetime.now(timezone.utc),
     }
+    if isinstance(image, bytes):
+        values["image"] = image
+    if isinstance(image_url, str) and image_url:
+        values["image_url"] = image_url[:1000]
     if variant is None:
         variant = ProductVariant(**values)
         db.add(variant)
@@ -282,6 +289,7 @@ def _insert_review(db: Session, product_id: int, review_data: dict) -> None:
     star = review_data.get("star_distribution", {})
     pros = review_data.get("pros")
     cons = review_data.get("cons")
+    comments = review_data.get("comments") or review_data.get("comment_json")
     try:
         review_count = int(review_data.get("review_count") or 0)
     except (TypeError, ValueError):
@@ -301,6 +309,7 @@ def _insert_review(db: Session, product_id: int, review_data: dict) -> None:
         stars_5_pct=star.get("5") or star.get(5),
         pros=pros if isinstance(pros, list) else None,
         cons=cons if isinstance(cons, list) else None,
+        comment_json=comments if isinstance(comments, (list, dict)) else None,
     ))
 
 
@@ -318,6 +327,12 @@ def write_normalized(db: Session, values: dict) -> None:
     brand_id    = _get_or_create_brand(db, values.get("brand"))
     category_id = _get_or_create_category(db, category_name, gender)
     product_id  = _get_or_create_product(db, values, brand_id, category_id)
+    variant_image_map = {
+        item.get("color"): item
+        for item in values.get("variant_images", [])
+        if isinstance(item, dict)
+    }
+    fallback_variant_image = variant_image_map.get(None) or next(iter(variant_image_map.values()), {})
     attr_ids = {
         "material_id":    _get_or_create_master(db, Material, "material_id", values.get("material")),
         "neck_type_id":   _get_or_create_master(db, NeckType, "neck_type_id", values.get("neck_type")),
@@ -337,6 +352,7 @@ def write_normalized(db: Session, values: dict) -> None:
         for variant in stock_variants:
             color_name = variant.get("color")
             color_id   = _get_or_create_color(db, color_name) if color_name else None
+            variant_image = variant_image_map.get(color_name) or fallback_variant_image
 
             sizes = variant.get("sizes")
             if sizes:
@@ -344,17 +360,25 @@ def write_normalized(db: Session, values: dict) -> None:
                 for size_entry in sizes:
                     label   = size_entry.get("size")
                     size_id = _get_or_create_size(db, label) if label else None
-                    _insert_variant(db, product_id, color_id, size_id, attr_ids, size_entry)
+                    entry = dict(size_entry)
+                    entry.setdefault("image_url", variant.get("image_url") or variant_image.get("image_url"))
+                    if variant_image.get("image"):
+                        entry["image"] = variant_image["image"]
+                    _insert_variant(db, product_id, color_id, size_id, attr_ids, entry)
             else:
                 # Amazon style — flat variant; size may be a comma-sep string
+                entry = dict(variant)
+                entry.setdefault("image_url", variant_image.get("image_url"))
+                if variant_image.get("image"):
+                    entry["image"] = variant_image["image"]
                 size_str    = variant.get("size") or ""
                 size_labels = [s.strip() for s in size_str.split(",") if s.strip()]
                 if size_labels:
                     for label in size_labels:
                         size_id = _get_or_create_size(db, label)
-                        _insert_variant(db, product_id, color_id, size_id, attr_ids, variant)
+                        _insert_variant(db, product_id, color_id, size_id, attr_ids, entry)
                 else:
-                    _insert_variant(db, product_id, color_id, None, attr_ids, variant)
+                    _insert_variant(db, product_id, color_id, None, attr_ids, entry)
 
     # ── Parse review_json → review ────────────────────────────────────────────
     review_json = values.get("review_json")
