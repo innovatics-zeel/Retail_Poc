@@ -82,16 +82,24 @@ _PLATFORM_COLS = {
 }
 
 _NORMALIZED_TABLES = {
-    "brands":           {"brand_id", "name"},
-    "categories":       {"category_id", "name", "gender"},
-    "colors":           {"color_id", "name", "color_family"},
-    "sizes":            {"size_id", "label", "sort_order", "size_system"},
+    "brands":           {"brand_id", "name", "created_at"},
+    "categories":       {"category_id", "name", "gender", "created_at"},
+    "colors":           {"color_id", "name", "color_family", "created_at"},
+    "sizes":            {"size_id", "label", "sort_order", "size_system", "created_at"},
+    "materials":        {"material_id", "name", "created_at"},
+    "neck_types":       {"neck_type_id", "name", "created_at"},
+    "sleeve_types":     {"sleeve_type_id", "name", "created_at"},
+    "fits":             {"fit_id", "name", "created_at"},
+    "patterns":         {"pattern_id", "name", "created_at"},
     "products":         {"product_id", "platform_id", "brand_id", "category_id",
-                         "title", "url", "scraped_at"},
+                         "title", "url", "image", "created_at", "scraped_at"},
     "product_variants": {"variant_id", "product_id", "color_id", "size_id",
-                         "is_available", "price", "currency", "scraped_at"},
+                         "material_id", "neck_type_id", "sleeve_type_id",
+                         "fit_id", "pattern_id",
+                         "is_available", "price", "currency", "image", "image_url",
+                         "created_at", "scraped_at"},
     "reviews":          {"review_id", "product_id", "rating_avg", "review_count",
-                         "scraped_at"},
+                         "comment_json", "created_at", "scraped_at"},
 }
 
 _REQUIRED_SCHEMA = {

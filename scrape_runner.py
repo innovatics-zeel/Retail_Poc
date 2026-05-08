@@ -13,15 +13,15 @@ from rich.table import Table
 
 from scraper.registry import get_scraper
 from pipeline.ingest import ingest_batch
-from database.connection import test_connection, verify_schema
+from database.connection import run_migrations, test_connection, verify_schema
 
 console = Console()
 
 # ── What to scrape — edit this list to add/remove jobs ───────────────────────
 SCRAPE_PLAN = [
-    {"platform": "nordstrom", "category": "mens_tshirts",   "max_products": 0},
-    {"platform": "nordstrom", "category": "womens_dresses",  "max_products": 0},
-    {"platform": "amazon",    "category": "mens_tshirts",   "max_products": 5},
+    {"platform": "nordstrom", "category": "mens_tshirts",   "max_products": 3},
+    {"platform": "nordstrom", "category": "womens_dresses",  "max_products": 3},
+    {"platform": "amazon",    "category": "mens_tshirts",   "max_products": 0},
     {"platform": "amazon",    "category": "womens_dresses",  "max_products": 0},
 ]
 
@@ -58,13 +58,16 @@ async def main():
         console.print("Make sure PostgreSQL is running and your [bold].env[/] is correct.")
         sys.exit(1)
 
-    console.print("[bold]2.[/] Verifying database schema...")
+    console.print("[bold]2.[/] Running pending database migrations...")
+    run_migrations()
+
+    console.print("[bold]3.[/] Verifying database schema...")
     if not verify_schema():
         console.print("\n[bold red]Database schema does not match current models.[/]")
-        console.print("Run migrations first:  python -c \"from database.connection import run_migrations; run_migrations()\"")
+        console.print("Please check the migration logs above for the column/table that failed to apply.")
         sys.exit(1)
 
-    console.print("[bold]3.[/] Scraping marketplaces...\n")
+    console.print("[bold]4.[/] Scraping marketplaces...\n")
     results = await run_scrape_plan()
 
     console.print("\n")

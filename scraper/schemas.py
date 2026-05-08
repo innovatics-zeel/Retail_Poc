@@ -58,6 +58,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Any, Optional
 from decimal import Decimal
+import json as _json
 
 
 # ── Raw JSON schemas — validate the exact payload produced by the scraper ──────
@@ -75,6 +76,7 @@ class SizeEntry(BaseModel):
 
 class ColorVariant(BaseModel):
     color: Optional[str] = None
+    image_url: Optional[str] = None
     sizes: list[SizeEntry] = Field(default_factory=list)
 
 
@@ -98,6 +100,7 @@ class ReviewSummary(BaseModel):
     star_distribution: dict = Field(default_factory=dict)
     pros: list[str] = Field(default_factory=list)
     cons: list[str] = Field(default_factory=list)
+    comments: list[dict] = Field(default_factory=list)
 
 
 class RawWomensDressPayload(BaseModel):
@@ -106,11 +109,15 @@ class RawWomensDressPayload(BaseModel):
     url: str
     title: str
     brand: Optional[str] = None
+    description: Optional[str] = None
+    image: Optional[bytes] = None
+    image_url: Optional[str] = None
     category: str = "womens_dresses"
     gender: str = "women"
     attributes: DressAttributes = Field(default_factory=DressAttributes)
     stock_variants: list[ColorVariant] = Field(default_factory=list)
     review: ReviewSummary = Field(default_factory=ReviewSummary)
+    variant_images: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +125,25 @@ class RawWomensDressPayload(BaseModel):
         if not isinstance(values, dict):
             return values
         data = dict(values)
+        for raw_key, parsed_key in [
+            ("attributes_json", "attributes"),
+            ("review_json", "review"),
+            ("stock_price_json", "stock_variants"),
+            ("stock_variants_json", "stock_variants"),
+        ]:
+            if raw_key in data and parsed_key not in data:
+                try:
+                    data[parsed_key] = _json.loads(data[raw_key])
+                except Exception:
+                    pass
+        if "raw_product_json" in data:
+            try:
+                raw_product = _json.loads(data["raw_product_json"])
+                for key in ("attributes", "review"):
+                    data.setdefault(key, raw_product.get(key))
+                data.setdefault("stock_variants", raw_product.get("stock_variants") or raw_product.get("stock_price"))
+            except Exception:
+                pass
         # scraper writes "stock_price"; accept both
         if "stock_variants" not in data and "stock_price" in data:
             data["stock_variants"] = data["stock_price"]
@@ -152,6 +178,8 @@ class ProductData(BaseModel):
     title: str
     brand: Optional[str] = None
     description: Optional[str] = None
+    image: Optional[bytes] = None
+    image_url: Optional[str] = None
 
     category: str
     gender: str
@@ -177,6 +205,7 @@ class ProductData(BaseModel):
     price_text: Optional[str] = None
     discount_text: Optional[str] = None
     review_details_json: Optional[str] = None
+    variant_images: list[dict] = Field(default_factory=list)
 
     data_label: str = "demonstration_data"
     poc_run_id: Optional[str] = None
@@ -282,6 +311,7 @@ class AmazonReview(BaseModel):
     review_summary: Optional[str] = None
     star_distribution: dict = Field(default_factory=dict)
     review_details: list = Field(default_factory=list)
+    comment_json: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _normalize_amazon_flat(data: dict) -> dict:
@@ -322,6 +352,7 @@ class RawAmazonMensTshirtPayload(BaseModel):
     platform: str = "amazon"
     url: str
     title: str
+    image: Optional[bytes] = None
     brand: Optional[str] = None
     category: str = "mens_tshirts"
     gender: str = "men"
@@ -351,6 +382,7 @@ class RawAmazonWomensDressPayload(BaseModel):
     platform: str = "amazon"
     url: str
     title: str
+    image: Optional[bytes] = None
     brand: Optional[str] = None
     category: str = "womens_dresses"
     gender: str = "women"
@@ -451,4 +483,3 @@ class WomensDressData(BaseModel):
     @classmethod
     def validate_currency(cls, v):
         return v.upper()
-

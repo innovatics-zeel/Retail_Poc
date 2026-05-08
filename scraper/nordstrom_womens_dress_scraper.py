@@ -81,6 +81,10 @@ _MATERIAL_PAT = re.compile(r"\d+%\s*[\w\-]+(?:\s*[,/&]\s*\d+%\s*[\w\-]+)*", re.I
 _DRESS_NECK_MAP = {
     "strapless": "strapless",
     "halter": "halter",
+    "surplice v-neck": "v-neck",
+    "surplice neckline": "surplice",
+    "surplice": "surplice",
+    "v-neckline": "v-neck",
     "v-neck": "v-neck",
     "v neck": "v-neck",
     "square neck": "square neck",
@@ -172,6 +176,7 @@ class NordstromWomensDressScraper(BaseScraper):
             "title": data.title, "brand": data.brand,
             "category": data.category, "gender": data.gender,
             "attributes": attrs, "stock_variants": variants, "review": review,
+            "image_url": data.image_url,
         }
 
         # first color from variants
@@ -184,7 +189,8 @@ class NordstromWomensDressScraper(BaseScraper):
             "url":                  data.url,
             "title":                data.title,
             "brand":                data.brand,
-            "description":          None,
+            "image":                data.image,
+            "description":          data.description,
             "sub_category":         None,
             "currency":             "USD",
             "current_price":        current_price,
@@ -207,6 +213,7 @@ class NordstromWomensDressScraper(BaseScraper):
             "attributes_json":      _json.dumps(attrs,     ensure_ascii=False),
             "stock_variants_json":  _json.dumps(variants,  ensure_ascii=False),
             "review_json":          _json.dumps(review,    ensure_ascii=False),
+            "variant_images":        data.variant_images,
             "raw_json":             _json.dumps(raw,       ensure_ascii=False),
             "data_label":           "demonstration_data",
             "poc_run_id":           None,
@@ -396,14 +403,27 @@ class NordstromWomensDressScraper(BaseScraper):
                 stock_price = await self._collect_variant_stock_price(page)
 
             soup = BeautifulSoup(await page.content(), "lxml")
-            return self._parse_product(soup, url, stock_price)
+            image_url = self._extract_image_url(soup, url)
+            image = await self._fetch_image_bytes(page, image_url)
+            variant_images = await self._fetch_variant_images(page, stock_price)
+            comments = await self._collect_review_comments(page, url, soup)
+            return self._parse_product(soup, url, stock_price, image, image_url, comments, variant_images)
         except Exception as e:
             logger.error(f"Error scraping {url}: {e}")
             return None
         finally:
             await page.close()
 
-    def _parse_product(self, soup: BeautifulSoup, url: str, stock_price: Optional[list[dict]] = None) -> Optional[dict]:
+    def _parse_product(
+        self,
+        soup: BeautifulSoup,
+        url: str,
+        stock_price: Optional[list[dict]] = None,
+        image: Optional[bytes] = None,
+        image_url: Optional[str] = None,
+        comments: Optional[list[dict]] = None,
+        variant_images: Optional[list[dict]] = None,
+    ) -> Optional[dict]:
         try:
             ld = self._extract_json_ld(soup)
 
@@ -425,8 +445,13 @@ class NordstromWomensDressScraper(BaseScraper):
             details = self._extract_details(soup)
             details_text = details["details_text"]
             description = details["description"] or self._clean_text(details_text) or None
-            attributes = self._parse_attributes(title, details_text)
+            # Combine description paragraph + bullet items so attributes in either source are captured
+            # (mirrors men's scraper which always gets full section text including the description)
+            attr_text = " ".join(filter(None, [details.get("description"), details_text]))
+            attributes = self._parse_attributes(title, attr_text)
             review = self._parse_review_details(soup, ld)
+            if comments:
+                review["comments"] = comments
 
             colors = [v.get("color") for v in (stock_price or []) if v.get("color")]
             sizes = []
@@ -435,12 +460,19 @@ class NordstromWomensDressScraper(BaseScraper):
                     if size.get("size") and size["size"] not in sizes:
                         sizes.append(size["size"])
 
+            json_variant_images = [
+                {k: v for k, v in item.items() if k != "image"}
+                for item in (variant_images or [])
+                if isinstance(item, dict)
+            ]
             raw_product = {
                 "platform": "nordstrom",
                 "platform_id": 2,
                 "url": url,
                 "title": title,
                 "brand": brand or None,
+                "image_url": image_url,
+                "variant_images": json_variant_images,
                 "description": description,
                 "category": "womens_dresses",
                 "gender": "women",
@@ -458,6 +490,9 @@ class NordstromWomensDressScraper(BaseScraper):
                 "url": url,
                 "title": title,
                 "brand": brand or None,
+                "image": image,
+                "image_url": image_url,
+                "variant_images": variant_images or [],
                 "description": description,
                 "category": "womens_dresses",
                 "gender": "women",
@@ -479,7 +514,9 @@ class NordstromWomensDressScraper(BaseScraper):
         if not colors:
             price = await self._read_price_from_page(page)
             sizes = await self._get_size_controls(page)
-            return [{"color": None, "sizes": [{**s, **price} for s in sizes]}] if sizes else []
+            soup = BeautifulSoup(await page.content(), "lxml")
+            image_url = self._extract_image_url(soup, page.url)
+            return [{"color": None, "image_url": image_url, "sizes": [{**s, **price} for s in sizes]}] if sizes else []
 
         variants = []
         for idx, color in enumerate(colors):
@@ -494,7 +531,9 @@ class NordstromWomensDressScraper(BaseScraper):
 
                 price = await self._read_price_from_page(page)
                 sizes = await self._get_size_controls(page)
-                variants.append({"color": color_name, "sizes": [{**s, **price} for s in sizes]})
+                soup = BeautifulSoup(await page.content(), "lxml")
+                image_url = self._extract_image_url(soup, page.url)
+                variants.append({"color": color_name, "image_url": image_url, "sizes": [{**s, **price} for s in sizes]})
             except Exception as e:
                 logger.debug(f"Could not collect variant for color {color_name}: {e}")
                 continue
@@ -728,6 +767,221 @@ class NordstromWomensDressScraper(BaseScraper):
         details_text = self._clean_text(" ".join(details_parts))
         return {"description": description, "details_text": details_text}
 
+    def _extract_image_url(self, soup: BeautifulSoup, base_url: str) -> Optional[str]:
+        selectors = [
+            "#gallery-item-container-zoom-0 img",
+            "div[id^='gallery-item-container-zoom-0'] img",
+            "img.LUNts",
+        ]
+        img = None
+        for selector in selectors:
+            img = soup.select_one(selector)
+            if img:
+                break
+
+        src = None
+        if img:
+            src = img.get("src")
+            if not src and img.get("srcset"):
+                first = img["srcset"].split(",", 1)[0].strip()
+                src = first.split(" ", 1)[0]
+
+        if not src:
+            ld = self._extract_json_ld(soup)
+            image = (ld or {}).get("image")
+            if isinstance(image, list) and image:
+                src = image[0]
+            elif isinstance(image, dict):
+                src = image.get("url")
+            elif isinstance(image, str):
+                src = image
+
+        return urljoin(base_url, src) if src else None
+
+    async def _fetch_image_bytes(self, page, image_url: Optional[str]) -> Optional[bytes]:
+        if not image_url:
+            return None
+        try:
+            response = await page.context.request.get(image_url, timeout=15000)
+            if not response.ok:
+                return None
+            content_type = (response.headers.get("content-type") or "").lower()
+            if content_type and "image" not in content_type:
+                return None
+            return await response.body()
+        except Exception as e:
+            logger.debug(f"Could not download Nordstrom image {image_url}: {e}")
+            return None
+
+    async def _fetch_variant_images(self, page, variants: Optional[list[dict]]) -> list[dict]:
+        images = []
+        seen: set[tuple[Optional[str], Optional[str]]] = set()
+        for variant in variants or []:
+            if not isinstance(variant, dict):
+                continue
+            color = variant.get("color")
+            image_url = variant.get("image_url")
+            key = (color, image_url)
+            if key in seen:
+                continue
+            seen.add(key)
+            images.append({
+                "color": color,
+                "image_url": image_url,
+                "image": await self._fetch_image_bytes(page, image_url),
+            })
+        return images
+
+    async def _collect_review_comments(
+        self,
+        page,
+        product_url: str,
+        first_soup: BeautifulSoup,
+        max_pages: int = 20,
+    ) -> list[dict]:
+        comments: list[dict] = []
+        seen_reviews: set[str] = set()
+        visited_pages: set[str] = set()
+        soup = first_soup
+
+        try:
+            await self._scroll_to_load(page)
+            soup = BeautifulSoup(await page.content(), "lxml")
+        except Exception as e:
+            logger.debug(f"Could not lazy-load Nordstrom reviews for {product_url}: {e}")
+
+        for _ in range(max_pages):
+            for comment in self._parse_review_comments(soup):
+                key = "|".join(
+                    str(comment.get(k) or "")
+                    for k in ("review_id", "author", "date", "title", "body")
+                )
+                if key and key not in seen_reviews:
+                    seen_reviews.add(key)
+                    comments.append(comment)
+
+            next_url = self._extract_next_reviews_url(soup, product_url)
+            if not next_url or next_url in visited_pages:
+                break
+            visited_pages.add(next_url)
+
+            try:
+                if not await self.safe_goto(page, next_url):
+                    break
+                if await self._is_blocked(page):
+                    break
+                await self._scroll_to_load(page)
+                soup = BeautifulSoup(await page.content(), "lxml")
+            except Exception as e:
+                logger.debug(f"Could not load Nordstrom review page {next_url}: {e}")
+                break
+
+        return comments
+
+    def _extract_next_reviews_url(self, soup: BeautifulSoup, product_url: str) -> Optional[str]:
+        candidates = soup.select(".SaLz9 a[href*='page='], a[href*='page=']")
+        for a in candidates:
+            text = self._clean_text(a.get_text(" ", strip=True)).lower()
+            aria = (a.get("aria-label") or "").lower()
+            if ("load" in text and "review" in text) or "review" in aria:
+                return urljoin(product_url, a.get("href", ""))
+        return None
+
+    def _parse_review_comments(self, soup: BeautifulSoup) -> list[dict]:
+        comments = []
+        for card in soup.select("div[id^='review-']"):
+            review_id = card.get("id")
+            author_el = card.select_one(".YIkWW")
+            stars_el = card.select_one("span[id^='review-stars'][aria-label]")
+            date_el = card.select_one(".i_qtk")
+            title_el = card.select_one(".gBRHe strong")
+            body_el = card.select_one("._AFhR .cbVo0, ._AFhR")
+
+            rating = None
+            if stars_el:
+                m = re.search(r"Rated\s+(\d+(?:\.\d+)?)\s+out of 5", stars_el.get("aria-label") or "", re.I)
+                if m:
+                    rating = float(m.group(1))
+
+            date = self._clean_text(date_el.get_text(" ", strip=True)) if date_el else None
+            if not date:
+                m = re.search(
+                    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}\b",
+                    card.get_text(" ", strip=True),
+                    re.I,
+                )
+                date = self._clean_text(m.group(0)) if m else None
+
+            fit = self._parse_review_fit(card)
+            photos = []
+            for img in card.select("img[src]"):
+                src = img.get("src")
+                if src and ("photos-" in src or "bazaarvoice" in src):
+                    photos.append({"url": src, "alt": img.get("alt")})
+
+            helpful_count = None
+            helpful_el = card.select_one(".pPLTf strong")
+            if helpful_el:
+                try:
+                    helpful_count = int(re.sub(r"[^\d]", "", helpful_el.get_text()))
+                except ValueError:
+                    pass
+
+            body = self._clean_text(body_el.get_text(" ", strip=True)) if body_el else None
+            title = self._clean_text(title_el.get_text(" ", strip=True)) if title_el else None
+            author = self._clean_text(author_el.get_text(" ", strip=True)) if author_el else None
+
+            if any([author, rating, date, title, body, photos]):
+                comments.append({
+                    "review_id": review_id,
+                    "author": author,
+                    "rating": rating,
+                    "date": date,
+                    "title": title,
+                    "body": body,
+                    "fit": fit,
+                    "photos": photos,
+                    "helpful_count": helpful_count,
+                })
+        return comments
+
+    def _parse_review_fit(self, card) -> Optional[dict]:
+        fit_label = card.find(string=re.compile(r"^\s*Fit:\s*$", re.I))
+        if not fit_label:
+            return None
+        container = fit_label.find_parent("div")
+        if container:
+            container = container.find_parent("div") or container
+
+        labels = []
+        active_index = None
+        if container:
+            labels = [
+                self._clean_text(el.get_text(" ", strip=True))
+                for el in container.select(".EwluB div")
+                if self._clean_text(el.get_text(" ", strip=True))
+            ]
+            markers = container.select(".wKQG4")
+            for idx, marker in enumerate(markers):
+                if "fqtsG" in (marker.get("class") or []):
+                    active_index = idx
+                    break
+
+        selected_label = None
+        if labels and active_index is not None:
+            marker_count = len(markers) if container else len(labels)
+            if marker_count > 1 and len(labels) > 1:
+                label_index = round(active_index * (len(labels) - 1) / (marker_count - 1))
+            else:
+                label_index = 0
+            selected_label = labels[min(label_index, len(labels) - 1)]
+
+        return {
+            "labels": labels,
+            "selected_index": active_index,
+            "selected_label": selected_label,
+        }
+
     def _parse_review_details(self, soup: BeautifulSoup, ld: Optional[dict] = None) -> dict:
         details = {
             "rating": None,
@@ -736,6 +990,7 @@ class NordstromWomensDressScraper(BaseScraper):
             "star_distribution": {},
             "pros": [],
             "cons": [],
+            "comments": [],
         }
 
         if ld and "aggregateRating" in ld:

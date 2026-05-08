@@ -1,1 +1,1207 @@
-[]
+[
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/astr-maeve-midi-dress/7737947",
+    "title": "Maeve Midi Dress",
+    "brand": "ASTR the Label",
+    "image_url": "https://n.nordstrommedia.com/it/40a31b4f-3a03-4a82-b233-d21d46b68e40.jpeg?crop=pad&w=780&h=1196",
+    "variant_images": [
+      {
+        "color": "Black",
+        "image_url": "https://n.nordstrommedia.com/it/8cac2483-735f-44c7-b222-1705eaf677fb.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Green Pink",
+        "image_url": "https://n.nordstrommedia.com/it/d4baa5e5-2ed5-4dfc-a95b-0ae9dce3f9c2.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Slate Blue",
+        "image_url": "https://n.nordstrommedia.com/it/559f63cf-e9ef-4cec-8899-79a3692422e6.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Dark Sage",
+        "image_url": "https://n.nordstrommedia.com/it/c37dff93-75c6-48e1-854f-96066f1a8cf0.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Blue Multi Abstract",
+        "image_url": "https://n.nordstrommedia.com/it/0053ab99-a00d-4ad5-8ddc-1b2f5500b1fd.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Periwinkle Floral",
+        "image_url": "https://n.nordstrommedia.com/it/557c866b-2303-41fb-88bc-d377dd398e1d.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Lilac",
+        "image_url": "https://n.nordstrommedia.com/it/57416672-3e74-482b-8a31-acceacd58183.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Lavender Multi Fl",
+        "image_url": "https://n.nordstrommedia.com/it/fdc4225f-d999-40eb-bd0b-363bced18d14.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Pink",
+        "image_url": "https://n.nordstrommedia.com/it/ab25b49e-824b-453b-a99a-f877e68da7c2.jpeg?crop=pad&w=780&h=1196"
+      },
+      {
+        "color": "Orange Pin",
+        "image_url": "https://n.nordstrommedia.com/it/40a31b4f-3a03-4a82-b233-d21d46b68e40.jpeg?crop=pad&w=780&h=1196"
+      }
+    ],
+    "description": "Pleating and a ruched bodice add to the charm of this swingy and romantic midi dress.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Black",
+      "Green Pink",
+      "Slate Blue",
+      "Dark Sage",
+      "Blue Multi Abstract",
+      "Periwinkle Floral",
+      "Lilac",
+      "Lavender Multi Fl",
+      "Pink",
+      "Orange Pin"
+    ],
+    "sizes": [
+      "X-Small",
+      "Small",
+      "Medium",
+      "Large",
+      "X-Large"
+    ],
+    "stock_price": [
+      {
+        "color": "Black",
+        "image_url": "https://n.nordstrommedia.com/it/8cac2483-735f-44c7-b222-1705eaf677fb.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": false,
+            "stock_text": "X-Small Not available in Black",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Black",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": false,
+            "stock_text": "Medium Not available in Black",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large - Only 1 left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Black",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Green Pink",
+        "image_url": "https://n.nordstrommedia.com/it/d4baa5e5-2ed5-4dfc-a95b-0ae9dce3f9c2.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small - Only 1 left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Green Pink",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium - Only 1 left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Green Pink",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Green Pink",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Slate Blue",
+        "image_url": "https://n.nordstrommedia.com/it/559f63cf-e9ef-4cec-8899-79a3692422e6.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small - Only 2 left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large - Only a few left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large - Only 1 left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Dark Sage",
+        "image_url": "https://n.nordstrommedia.com/it/c37dff93-75c6-48e1-854f-96066f1a8cf0.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Blue Multi Abstract",
+        "image_url": "https://n.nordstrommedia.com/it/0053ab99-a00d-4ad5-8ddc-1b2f5500b1fd.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small - Only a few left",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": false,
+            "stock_text": "Small Not available in Blue Multi Abstract",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": false,
+            "stock_text": "Medium Not available in Blue Multi Abstract",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": false,
+            "stock_text": "Large Not available in Blue Multi Abstract",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": false,
+            "stock_text": "X-Large Not available in Blue Multi Abstract",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Periwinkle Floral",
+        "image_url": "https://n.nordstrommedia.com/it/557c866b-2303-41fb-88bc-d377dd398e1d.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Lilac",
+        "image_url": "https://n.nordstrommedia.com/it/57416672-3e74-482b-8a31-acceacd58183.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Lavender Multi Fl",
+        "image_url": "https://n.nordstrommedia.com/it/fdc4225f-d999-40eb-bd0b-363bced18d14.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Pink",
+        "image_url": "https://n.nordstrommedia.com/it/ab25b49e-824b-453b-a99a-f877e68da7c2.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      },
+      {
+        "color": "Orange Pin",
+        "image_url": "https://n.nordstrommedia.com/it/40a31b4f-3a03-4a82-b233-d21d46b68e40.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "X-Small",
+            "available": true,
+            "stock_text": "X-Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "Large",
+            "available": true,
+            "stock_text": "Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          },
+          {
+            "size": "X-Large",
+            "available": true,
+            "stock_text": "X-Large",
+            "price_text": "$149.89",
+            "original_price_text": null,
+            "discount_text": null,
+            "discount_percent": null,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "v-neck",
+      "dress_length": "midi",
+      "occasion": null,
+      "fit": null,
+      "pattern": null,
+      "closure_type": "zip",
+      "material": "100% polyester",
+      "care_instructions": "Dry clean",
+      "sleeve_type": null,
+      "details_text": "Pleating and a ruched bodice add to the charm of this swingy and romantic midi dress. 39\" center front length (size Medium) Hidden side-zip closure V-neck Adjustable straps Lined bodice 100% polyester Dry clean Imported Item #10249004"
+    },
+    "review": {
+      "rating": 4.3,
+      "review_count": 150,
+      "fit": "True to size",
+      "star_distribution": {
+        "5": 67,
+        "4": 9,
+        "3": 13,
+        "2": 5,
+        "1": 5
+      },
+      "pros": [
+        "fit (30)",
+        "appearance (30)",
+        "comfort (21)",
+        "satisfaction (20)",
+        "color (20)"
+      ],
+      "cons": [],
+      "comments": [
+        {
+          "review_id": "review-1",
+          "author": "Natalia Bravo",
+          "rating": 5.0,
+          "date": "Feb 23, 2025",
+          "title": "Gorgeous",
+          "body": "This is the perfect dress, it's lightweight and very comfortable, I have big hips and a belly ☺️, so wearing it was perfect to hide that... I received many compliments",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/dc985aa5-e225-5384-8140-5fed8027e01b",
+              "alt": "Review Thumbnail Image 0 239978921"
+            }
+          ],
+          "helpful_count": 55
+        },
+        {
+          "review_id": "review-2",
+          "author": "LAROXY95",
+          "rating": 4.0,
+          "date": "Apr 24, 2024",
+          "title": "Pretty Floral Dress",
+          "body": "I bought this for a spring wedding and it is comfortable and easy to wear. My measurements are 34-27-36.",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/f9d39562-5fef-5ba6-bbcc-38f767abe3d4",
+              "alt": "Review Thumbnail Image 0 233320471"
+            }
+          ],
+          "helpful_count": 53
+        },
+        {
+          "review_id": "review-3",
+          "author": "JessWD",
+          "rating": 5.0,
+          "date": "Aug 1, 2024",
+          "title": "Loved how flowy and comfortable the dress is",
+          "body": "Wore this dress to a wedding. Slightly tight around my breasts, was wearing a 34H strapless bra. Very comfortable and had so much fun twirling around in it.",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/225e1361-5cd0-57bb-89fd-76e2549c01ca",
+              "alt": "Review Thumbnail Image 0 235299379"
+            },
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/57c88403-626c-567f-9b5a-ff40a36189be",
+              "alt": "Review Thumbnail Image 1 235299379"
+            }
+          ],
+          "helpful_count": 41
+        },
+        {
+          "review_id": "review-4",
+          "author": "Elizabethlw",
+          "rating": 2.0,
+          "date": "Feb 26, 2024",
+          "title": "Gorgeous dress, arrived in poor condition",
+          "body": "I ordered this for a trip and it arrived with the security tag still attached. Unable to get to the store before we left, I rush ordered a replacement and it arrived the next day. Unfortunately, it was stuffed into a mailer envelope instead of being shipped in a box on the hanger and it was so crumpled that even the dry cleaner doubted they could get the wrinkles out without removing the pleats. Such a shame because it would have been perfect if Nordstrom had shipped either one of them in wearable condition. Show more",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [],
+          "helpful_count": 27
+        },
+        {
+          "review_id": "review-5",
+          "author": "Bapples",
+          "rating": 5.0,
+          "date": "May 27, 2025",
+          "title": "Perfect wedding guest dress",
+          "body": "I got this for a wedding and loved it. I have a pretty large bust (36 G) and there was plenty of room in the chest. The dress was flowy and the color was bright and gorgeous.",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/a375218f-5eab-55e5-ba21-ddeb087db1e8",
+              "alt": "Review Thumbnail Image 0 242219388"
+            }
+          ],
+          "helpful_count": 23
+        },
+        {
+          "review_id": "review-6",
+          "author": "Olga",
+          "rating": 5.0,
+          "date": "Aug 26, 2024",
+          "title": "Feminine and pretty",
+          "body": "Absolutely beautiful! Bought this for my sisters garden wedding and received a ton of compliments. I felt very pretty. Can’t wait to find another opportunity to wear again.",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [
+            {
+              "url": "https://photos-us.bazaarvoice.com/photo/2/cGhvdG86bm9yZHN0cm9t/75da6620-752d-53c1-9c6c-f34f07bc52bd",
+              "alt": "Review Thumbnail Image 0 235795960"
+            }
+          ],
+          "helpful_count": 23
+        }
+      ]
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/donna-karan-new-york-belted-fit-flare-midi-dress/8691602",
+    "title": "Belted Fit & Flare Midi Dress",
+    "brand": "Donna Karan New York",
+    "image_url": "https://n.nordstrommedia.com/it/4e493ac3-31eb-431f-871b-511c81493a30.jpeg?crop=pad&w=780&h=1196",
+    "variant_images": [
+      {
+        "color": "Black/ Parchment",
+        "image_url": "https://n.nordstrommedia.com/it/4e493ac3-31eb-431f-871b-511c81493a30.jpeg?crop=pad&w=780&h=1196"
+      }
+    ],
+    "description": "Make an unforgettable entrance in a fit-and-flare midi dress covered in large-scale blooms and defined at the waist by a wide belt.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Black/ Parchment"
+    ],
+    "sizes": [
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16"
+    ],
+    "stock_price": [
+      {
+        "color": "Black/ Parchment",
+        "image_url": "https://n.nordstrommedia.com/it/4e493ac3-31eb-431f-871b-511c81493a30.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "2",
+            "available": true,
+            "stock_text": "2",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "4",
+            "available": true,
+            "stock_text": "4",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "6",
+            "available": true,
+            "stock_text": "6",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "8",
+            "available": true,
+            "stock_text": "8",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "10",
+            "available": true,
+            "stock_text": "10",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "12",
+            "available": true,
+            "stock_text": "12",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "14",
+            "available": true,
+            "stock_text": "14",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "16",
+            "available": true,
+            "stock_text": "16",
+            "price_text": "$165.99",
+            "original_price_text": "$221.32",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": "square neck",
+      "dress_length": "midi",
+      "occasion": null,
+      "fit": null,
+      "pattern": null,
+      "closure_type": "zip",
+      "material": "97% cotton, 3% spandex",
+      "care_instructions": "Dry clean",
+      "sleeve_type": "sleeveless",
+      "details_text": "Make an unforgettable entrance in a fit-and-flare midi dress covered in large-scale blooms and defined at the waist by a wide belt. 42 1/2\" length Hidden back-zip closure Square neck Sleeveless On-seam pockets Removable belt Unlined 97% cotton, 3% spandex Dry clean Imported Item #11152921"
+    },
+    "review": {
+      "rating": 5.0,
+      "review_count": 3,
+      "fit": "True to size",
+      "star_distribution": {
+        "5": 100,
+        "4": 0,
+        "3": 0,
+        "2": 0,
+        "1": 0
+      },
+      "pros": [],
+      "cons": [],
+      "comments": [
+        {
+          "review_id": "review-1",
+          "author": "MichelleZ123",
+          "rating": 5.0,
+          "date": "Jan 25, 2026",
+          "title": "Perfect Dress",
+          "body": "Absolutely love this dress and I’m not typically a dress fan. The fit is very flattering and it was comfortable enough to wear for hours at a recent baby shower. The pockets are great!",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [],
+          "helpful_count": 5
+        },
+        {
+          "review_id": "review-2",
+          "author": "Sandy1157",
+          "rating": 5.0,
+          "date": "Mar 27, 2026",
+          "title": "Perfect wedding guest dress",
+          "body": "I needed a dress for an upcoming spring wedding and this one, by Donna Karan, fit the bill perfectly. Fitted at the top, the heavier fabric allows the dress to flare close to the body instead of billowing out. Very flattering especially with the belt that nips in the waist. I love the pockets, too! Show more",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [],
+          "helpful_count": 2
+        },
+        {
+          "review_id": "review-3",
+          "author": "Ssxshap",
+          "rating": 5.0,
+          "date": "Apr 26, 2026",
+          "title": "Love this dress!",
+          "body": "Good quality fabric and a beautiful dress for my future daughter in-law’s bridal shower!",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": null,
+            "selected_label": null
+          },
+          "photos": [],
+          "helpful_count": null
+        }
+      ]
+    }
+  },
+  {
+    "platform": "nordstrom",
+    "platform_id": 2,
+    "url": "https://www.nordstrom.com/s/7761107",
+    "title": "Lisbeth Floral Cap Sleeve Satin Midi Dress",
+    "brand": "Petal & Pup",
+    "image_url": "https://n.nordstrommedia.com/it/9cdb94a3-f237-4db1-8eb9-baa5093a08e5.jpeg?crop=pad&w=780&h=1196",
+    "variant_images": [
+      {
+        "color": "Green Floral",
+        "image_url": "https://n.nordstrommedia.com/it/9cdb94a3-f237-4db1-8eb9-baa5093a08e5.jpeg?crop=pad&w=780&h=1196"
+      }
+    ],
+    "description": "Painterly flowers romance a smooth satin midi dress framed by dainty cap sleeves, elegant ruching and a sultry side slit.",
+    "category": "womens_dresses",
+    "gender": "women",
+    "currency": "USD",
+    "colors": [
+      "Green Floral"
+    ],
+    "sizes": [
+      "Small",
+      "Medium"
+    ],
+    "stock_price": [
+      {
+        "color": "Green Floral",
+        "image_url": "https://n.nordstrommedia.com/it/9cdb94a3-f237-4db1-8eb9-baa5093a08e5.jpeg?crop=pad&w=780&h=1196",
+        "sizes": [
+          {
+            "size": "Small",
+            "available": true,
+            "stock_text": "Small",
+            "price_text": "$86.95",
+            "original_price_text": "$115.93",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          },
+          {
+            "size": "Medium",
+            "available": true,
+            "stock_text": "Medium",
+            "price_text": "$86.95",
+            "original_price_text": "$115.93",
+            "discount_text": "(25% off)",
+            "discount_percent": 25.0,
+            "currency": "USD"
+          }
+        ]
+      }
+    ],
+    "attributes": {
+      "neck_type": null,
+      "dress_length": "midi",
+      "occasion": null,
+      "fit": null,
+      "pattern": "floral",
+      "closure_type": "zip",
+      "material": "100% polyester",
+      "care_instructions": "Hand wash, dry flat",
+      "sleeve_type": "cap sleeve",
+      "details_text": "Painterly flowers romance a smooth satin midi dress framed by dainty cap sleeves, elegant ruching and a sultry side slit. Hidden back zip; keyhole with button-and-loop closure Jewel neck Cap sleeves Lined 100% polyester Hand wash, dry flat Imported Item #10271671"
+    },
+    "review": {
+      "rating": 4.0,
+      "review_count": 102,
+      "fit": "Runs slightly small",
+      "star_distribution": {
+        "5": 54,
+        "4": 16,
+        "3": 18,
+        "2": 5,
+        "1": 8
+      },
+      "pros": [
+        "appearance (26)",
+        "satisfaction (21)",
+        "flattering (11)",
+        "material (11)",
+        "fit (10)"
+      ],
+      "cons": [
+        "small (3)",
+        "size (3)",
+        "large (2)"
+      ],
+      "comments": [
+        {
+          "review_id": "review-1",
+          "author": "Tudyart",
+          "rating": 3.0,
+          "date": "Aug 11, 2024",
+          "title": "Sizing Issues",
+          "body": "The sizing chart was no where near the size of the dress. The dress is beautiful but I stopped zipping after it passed my waist but would not go over my rib area. I am a 36 bust and I ordered a medium which should have been perfect. I gave it to a granddaughter that is a size 4 and it is tight on her! Show more",
+          "fit": null,
+          "photos": [],
+          "helpful_count": 15
+        },
+        {
+          "review_id": "review-2",
+          "author": "London81",
+          "rating": 3.0,
+          "date": "June 21, 2025",
+          "title": "ordered large and its still too small",
+          "body": "Love this dress. The fabric is quite thin. The dress is very long in the waist, too wide on top and very tight mid back. Had trouble zipping up. I’m a medium and bought large because I saw all the posts about the small dress size. It’s just not made for large! Show more",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": 1,
+            "selected_label": "Small"
+          },
+          "photos": [],
+          "helpful_count": 10
+        },
+        {
+          "review_id": "review-3",
+          "author": "GinaWB",
+          "rating": 1.0,
+          "date": "Sept 2, 2024",
+          "title": "All wrong!",
+          "body": "Horrible fit! Too long wasted, too long, not great fabric",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": 1,
+            "selected_label": "Small"
+          },
+          "photos": [],
+          "helpful_count": 10
+        },
+        {
+          "review_id": "review-4",
+          "author": "NWN18",
+          "rating": 3.0,
+          "date": "Jan 12, 2025",
+          "title": "Runs small",
+          "body": "Runs very small",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": 2,
+            "selected_label": "True to size"
+          },
+          "photos": [],
+          "helpful_count": 6
+        },
+        {
+          "review_id": "review-5",
+          "author": "PinkRanunc",
+          "rating": 3.0,
+          "date": "Feb 18, 2025",
+          "title": "Ill fitting and cheap material",
+          "body": "The front looks good but the back has excess material bunching out, right where the zip closes. It’s like it’s made for someone with a much longer torso than I do. It also needs to be hemmed as it looks like a gown on me. Additionally, I find the material to be cheap looking. Returned. Show more",
+          "fit": {
+            "labels": [
+              "Small",
+              "True to size",
+              "Large"
+            ],
+            "selected_index": 3,
+            "selected_label": "Large"
+          },
+          "photos": [],
+          "helpful_count": 5
+        },
+        {
+          "review_id": "review-6",
+          "author": "Sharona F SanDiego",
+          "rating": 2.0,
+          "date": "Aug 6, 2024",
+          "title": "not the highest quality",
+          "body": "Disappointed! Pretty in pics,",
+          "fit": null,
+          "photos": [],
+          "helpful_count": 4
+        }
+      ]
+    }
+  }
+]

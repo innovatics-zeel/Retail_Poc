@@ -10,8 +10,10 @@ import json
 import random
 import re
 import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
-from urllib.parse import unquote
+from urllib.parse import unquote, urljoin
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -24,6 +26,8 @@ from scraper.attribute_parser import (
     parse_pattern, parse_fit, parse_neck_type, parse_sleeve_type,
 )
 from database.models import GENDER_ID
+from database.connection import SessionLocal
+from database.models import Product, Review
 from config.settings import settings
 
 try:
@@ -33,6 +37,8 @@ except ImportError:
     _HAS_CAMOUFOX = False
 
 AMAZON_HOME = "https://www.amazon.com"
+AUTH_STATE_PATH = Path("data/amazon_wd_auth_state.json")
+MAX_REVIEW_PAGES = 250
 # Women's Dresses — Amazon Fashion > Women > Clothing > Dresses (node 1045024)
 LISTING_URL = (
     "https://www.amazon.com/s?"
@@ -66,6 +72,7 @@ class AmazonWomensDressScraper(BaseScraper):
     def __init__(self):
         super().__init__()
         self._camoufox_mgr = None
+        self._signed_in = False
 
     # ── Browser lifecycle ─────────────────────────────────────────────────────
 
@@ -74,13 +81,16 @@ class AmazonWomensDressScraper(BaseScraper):
             logger.info("[AMZ-WD] Starting camoufox")
             self._camoufox_mgr = AsyncCamoufox(headless=settings.scraper_headless)
             self.browser = await self._camoufox_mgr.__aenter__()
-            self.context = await self.browser.new_context(
-                locale="en-US",
-                timezone_id="America/New_York",
-                geolocation={"latitude": 40.7128, "longitude": -74.0060},
-                permissions=["geolocation"],
-                extra_http_headers={"Accept-Language": "en-US,en;q=0.9", "DNT": "1"},
-            )
+            context_kwargs = {
+                "locale": "en-US",
+                "timezone_id": "America/New_York",
+                "geolocation": {"latitude": 40.7128, "longitude": -74.0060},
+                "permissions": ["geolocation"],
+                "extra_http_headers": {"Accept-Language": "en-US,en;q=0.9", "DNT": "1"},
+            }
+            if AUTH_STATE_PATH.exists():
+                context_kwargs["storage_state"] = str(AUTH_STATE_PATH)
+            self.context = await self.browser.new_context(**context_kwargs)
             await self.context.add_init_script(_STEALTH_JS)
             logger.info("[AMZ-WD] camoufox ready")
         else:
@@ -213,6 +223,34 @@ class AmazonWomensDressScraper(BaseScraper):
                 results.append((asin, f"https://www.amazon.com/dp/{m.group(1)}"))
         return results
 
+    async def _fetch_image_bytes(self, page, image_url: Optional[str], referer: str) -> Optional[bytes]:
+        if not image_url:
+            return None
+        try:
+            response = await page.context.request.get(
+                image_url,
+                headers={
+                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                    "Referer": referer,
+                },
+                timeout=15000,
+            )
+            if not response.ok:
+                logger.debug(f"[AMZ-WD] image fetch failed {response.status}: {image_url}")
+                return None
+            content_type = (response.headers.get("content-type") or "").lower()
+            if content_type and not content_type.startswith("image/"):
+                logger.debug(f"[AMZ-WD] image fetch returned {content_type}: {image_url}")
+                return None
+            body = await response.body()
+            if not body or len(body) > 5_000_000:
+                logger.debug(f"[AMZ-WD] image skipped size={len(body) if body else 0}: {image_url}")
+                return None
+            return body
+        except Exception as exc:
+            logger.debug(f"[AMZ-WD] image fetch failed for {image_url}: {exc}")
+            return None
+
     # ── Browser restart ───────────────────────────────────────────────────────
 
     async def _restart_browser(self) -> bool:
@@ -245,7 +283,18 @@ class AmazonWomensDressScraper(BaseScraper):
                 await asyncio.sleep(1.5)
                 html = await page.content()
                 soup = BeautifulSoup(html, "lxml")
-                return self._parse_page(soup, url, asin)
+                data = self._parse_page(soup, url, asin)
+                if data:
+                    image_url = data.pop("_image_url", None)
+                    data["image"] = await self._fetch_image_bytes(page, image_url, url)
+                    existing_comments = self._existing_comments(asin, url)
+                    new_comments = await self._scrape_review_comments(page, asin, existing_comments)
+                    data["review"]["comment_json"] = self._merge_comments(existing_comments, new_comments)
+                    logger.info(
+                        f"[AMZ-WD] comments: existing={len(existing_comments)} "
+                        f"new={len(new_comments)} total={len(data['review']['comment_json'])}"
+                    )
+                return data
             except Exception as e:
                 err = str(e).lower()
                 logger.error(f"[AMZ-WD] scrape error {url} (attempt {attempt + 1}): {e}")
@@ -285,6 +334,8 @@ class AmazonWomensDressScraper(BaseScraper):
 
         brand = self._brand(soup)
         logger.debug(f"[AMZ-WD] brand={brand!r}")
+        image_url = self._image_url(soup)
+        logger.debug(f"[AMZ-WD] image_url={image_url!r}")
 
         current_price, original_price = self._prices(soup)
         discount_pct = None
@@ -338,6 +389,7 @@ class AmazonWomensDressScraper(BaseScraper):
             "platform": "amazon",
             "url": url,
             "title": title,
+            "_image_url": image_url,
             "brand": brand,
             "category": "womens_dresses",
             "gender": "women",
@@ -362,6 +414,284 @@ class AmazonWomensDressScraper(BaseScraper):
                 "star_distribution": star_dist,
             },
         }
+
+    # ── Review comment scraping ───────────────────────────────────────────────
+
+    async def _scrape_review_comments(
+        self,
+        page,
+        asin: str,
+        existing_comments: list[dict],
+    ) -> list[dict]:
+        """Open the review list and scrape unsaved comments newest-first."""
+        if not asin:
+            return []
+
+        existing_keys = {self._comment_key(c) for c in existing_comments}
+        latest_existing = self._latest_comment_date(existing_comments)
+        comments: list[dict] = []
+
+        review_url = self._reviews_url(asin)
+        if not await self._open_reviews_page(page, asin):
+            return comments
+        if not await self._ensure_signed_in(page):
+            logger.warning("[AMZ-WD] could not sign in for review comments; continuing without comments")
+            return comments
+        if "/product-reviews/" not in page.url:
+            await self.safe_goto(page, review_url)
+
+        page_num = 1
+        while page_num <= MAX_REVIEW_PAGES:
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                await asyncio.sleep(random.uniform(0.8, 1.4))
+                html = await page.content()
+                soup = BeautifulSoup(html, "lxml")
+                page_comments = self._parse_review_comments(soup)
+                if not page_comments:
+                    logger.warning(
+                        f"[AMZ-WD] no review comment blocks for {asin}; "
+                        f"url={page.url!r} title={(await page.title())!r}"
+                    )
+                    self._save_debug_html(html, f"reviews_{asin}_p{page_num}")
+                    break
+
+                older_than_existing = 0
+                added_this_page = 0
+                for comment in page_comments:
+                    key = self._comment_key(comment)
+                    comment_date = self._parse_review_date(comment.get("date"))
+                    if key in existing_keys:
+                        continue
+                    if latest_existing and comment_date and comment_date < latest_existing:
+                        older_than_existing += 1
+                        continue
+                    comments.append(comment)
+                    existing_keys.add(key)
+                    added_this_page += 1
+
+                if latest_existing and older_than_existing == len(page_comments) and added_this_page == 0:
+                    break
+                if added_this_page == 0:
+                    break
+                if not await self._open_next_review_page(page, asin, page_num + 1):
+                    break
+                page_num += 1
+            except Exception as exc:
+                logger.warning(f"[AMZ-WD] review comments page {page_num} failed: {exc}")
+                break
+
+        return comments
+
+    def _reviews_url(self, asin: str, page_number: int = 1) -> str:
+        return (
+            f"{AMAZON_HOME}/product-reviews/{asin}/"
+            f"?ie=UTF8&reviewerType=all_reviews&sortBy=recent&pageNumber={page_number}"
+        )
+
+    async def _open_reviews_page(self, page, asin: str) -> bool:
+        review_url = self._reviews_url(asin)
+        try:
+            for sel in [
+                "text=See more reviews",
+                "a[data-hook='see-all-reviews-link-foot']",
+                "#reviews-medley-footer a",
+            ]:
+                try:
+                    target = page.locator(sel).first
+                    if await target.is_visible(timeout=2500):
+                        await target.click(timeout=5000)
+                        await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        return await self.safe_goto(page, review_url)
+                except Exception:
+                    pass
+
+            return await self.safe_goto(page, review_url)
+        except Exception as exc:
+            logger.warning(f"[AMZ-WD] could not open review page for {asin}: {exc}")
+            return False
+
+    async def _ensure_signed_in(self, page) -> bool:
+        try:
+            email_visible = await page.locator("#ap_email_login, input[name='email']").first.is_visible(timeout=2500)
+        except Exception:
+            email_visible = False
+        needs_login = "/ap/signin" in page.url or email_visible
+        if not needs_login:
+            self._signed_in = True
+            return True
+
+        email = settings.amazon_email
+        password = settings.amazon_password
+        if not email or not password:
+            logger.warning("[AMZ-WD] AMAZON_EMAIL/AMAZON_PASSWORD missing; cannot scrape gated reviews")
+            return False
+
+        try:
+            email_input = page.locator("#ap_email_login, input[name='email']").first
+            await email_input.wait_for(state="visible", timeout=12000)
+            await email_input.fill(email)
+            await page.locator("input[type='submit'][aria-labelledby='continue-announce'], #continue").first.click(timeout=8000)
+            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+
+            password_input = page.locator("#ap_password, input[name='password']").first
+            await password_input.wait_for(state="visible", timeout=15000)
+            await password_input.fill(password)
+            await page.locator("#signInSubmit, input[type='submit'][aria-labelledby='auth-signin-button-announce']").first.click(timeout=10000)
+            await page.wait_for_load_state("domcontentloaded", timeout=20000)
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+
+            still_needs_login = "/ap/signin" in page.url and await page.locator("#ap_password, input[name='password']").first.is_visible(timeout=1500)
+            if still_needs_login:
+                logger.warning("[AMZ-WD] Amazon sign-in did not complete; MFA/CAPTCHA may be required")
+                return False
+
+            AUTH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            await self.context.storage_state(path=str(AUTH_STATE_PATH))
+            self._signed_in = True
+            logger.info("[AMZ-WD] Amazon sign-in complete; auth state saved for reuse")
+            return True
+        except Exception as exc:
+            logger.warning(f"[AMZ-WD] Amazon sign-in failed: {exc}")
+            return False
+
+    async def _open_next_review_page(self, page, asin: str, next_page_num: int) -> bool:
+        try:
+            next_link = page.locator("li.a-last a, ul.a-pagination li.a-last a").first
+            if await next_link.is_visible(timeout=2500):
+                await next_link.click(timeout=5000)
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                return True
+        except Exception:
+            pass
+        return await self.safe_goto(page, self._reviews_url(asin, next_page_num))
+
+    def _parse_review_comments(self, soup: BeautifulSoup) -> list[dict]:
+        comments: list[dict] = []
+        for block in soup.select("div[data-hook='review'], li[data-hook='review'], div.review"):
+            date_el = block.select_one("span[data-hook='review-date']")
+            title_el = block.select_one(
+                "a[data-hook='review-title'], span[data-hook='review-title'], "
+                "a.review-title, span.review-title"
+            )
+            body_el = block.select_one("span[data-hook='review-body'], div.review-data span.review-text")
+            date = re.sub(r"\s+", " ", date_el.get_text(" ", strip=True)).strip() if date_el else ""
+            title = self._review_title_text(title_el) if title_el else ""
+            description = re.sub(r"\s+", " ", body_el.get_text(" ", strip=True)).strip() if body_el else ""
+            color, size = self._review_color_size(block)
+            if date or title or description:
+                comments.append({
+                    "date": date,
+                    "title": title,
+                    "description": description,
+                    "color": color,
+                    "size": size,
+                })
+        return comments
+
+    def _review_color_size(self, block) -> tuple[Optional[str], Optional[str]]:
+        strip_el = block.select_one("a[data-hook='format-strip'], div.review-format-strip")
+        if not strip_el:
+            return None, None
+        text = re.sub(r"\s+", " ", strip_el.get_text(" ", strip=True)).strip()
+        color = self._extract_format_value(text, "Color")
+        size = self._extract_format_value(text, "Size")
+        return color, size
+
+    def _extract_format_value(self, text: str, label: str) -> Optional[str]:
+        match = re.search(
+            rf"{re.escape(label)}\s*:\s*(.*?)(?=\s+(?:Color|Size)\s*:|Verified Purchase|$)",
+            text,
+            flags=re.I,
+        )
+        if not match:
+            return None
+        value = re.sub(r"\s+", " ", match.group(1)).strip(" |")
+        return value or None
+
+    def _review_title_text(self, title_el) -> str:
+        spans = [
+            re.sub(r"\s+", " ", span.get_text(" ", strip=True)).strip()
+            for span in title_el.select("span")
+            if "a-icon-alt" not in span.get("class", [])
+        ]
+        spans = [s for s in spans if s and "out of 5 stars" not in s.lower()]
+        if spans:
+            return spans[-1]
+        return re.sub(r"\s+", " ", title_el.get_text(" ", strip=True)).strip()
+
+    def _existing_comments(self, asin: str, url: str) -> list[dict]:
+        db = SessionLocal()
+        try:
+            product = (
+                db.query(Product)
+                .filter((Product.platform_item_id == asin) | (Product.url == url))
+                .order_by(Product.scraped_at.desc(), Product.product_id.desc())
+                .first()
+            )
+            if not product:
+                return []
+            review = (
+                db.query(Review)
+                .filter(Review.product_id == product.product_id, Review.comment_json.isnot(None))
+                .order_by(Review.scraped_at.desc(), Review.review_id.desc())
+                .first()
+            )
+            if not review or not isinstance(review.comment_json, list):
+                return []
+            return [c for c in review.comment_json if isinstance(c, dict)]
+        except Exception as exc:
+            logger.debug(f"[AMZ-WD] existing comment lookup failed for {asin}: {exc}")
+            return []
+        finally:
+            db.close()
+
+    def _merge_comments(self, existing_comments: list[dict], new_comments: list[dict]) -> list[dict]:
+        merged: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for comment in [*new_comments, *existing_comments]:
+            key = self._comment_key(comment)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append({
+                "date": self._format_review_date(comment.get("date")) or comment.get("date", ""),
+                "title": comment.get("title", ""),
+                "description": comment.get("description", ""),
+                "color": comment.get("color"),
+                "size": comment.get("size"),
+            })
+        merged.sort(key=lambda c: self._parse_review_date(c.get("date")) or datetime.min, reverse=True)
+        for idx, comment in enumerate(merged, start=1):
+            comment["comment_count"] = idx
+        return merged
+
+    def _latest_comment_date(self, comments: list[dict]) -> Optional[datetime]:
+        dates = [self._parse_review_date(comment.get("date")) for comment in comments]
+        dates = [date for date in dates if date]
+        return max(dates) if dates else None
+
+    def _parse_review_date(self, text: Optional[str]) -> Optional[datetime]:
+        if not text:
+            return None
+        cleaned = re.sub(r"^Reviewed\s+.*?\s+on\s+", "", text.strip(), flags=re.I)
+        for fmt in ("%B %d, %Y", "%b %d, %Y", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(cleaned, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def _format_review_date(self, text: Optional[str]) -> Optional[str]:
+        parsed = self._parse_review_date(text)
+        return parsed.strftime("%d-%m-%Y") if parsed else None
+
+    def _comment_key(self, comment: dict) -> tuple[str, str, str]:
+        return (
+            re.sub(r"\s+", " ", str(comment.get("date", ""))).strip().lower(),
+            re.sub(r"\s+", " ", str(comment.get("title", ""))).strip().lower(),
+            re.sub(r"\s+", " ", str(comment.get("description", ""))).strip().lower(),
+        )
 
     # ── HTML helpers ──────────────────────────────────────────────────────────
 
@@ -401,6 +731,37 @@ class AmazonWomensDressScraper(BaseScraper):
                 return txt
         tbl = self._detail_table(soup)
         return tbl.get("Brand") or tbl.get("Brand Name")
+
+    def _image_url(self, soup: BeautifulSoup) -> Optional[str]:
+        img = (
+            soup.select_one("#landingImage")
+            or soup.select_one("#imgTagWrapperId img")
+            or soup.select_one("img[data-a-image-name='landingImage']")
+        )
+        if not img:
+            return None
+
+        hires = img.get("data-old-hires")
+        if hires:
+            return urljoin(AMAZON_HOME, hires)
+
+        dynamic = img.get("data-a-dynamic-image")
+        if dynamic:
+            try:
+                candidates = json.loads(dynamic)
+                if isinstance(candidates, dict) and candidates:
+                    return max(
+                        candidates,
+                        key=lambda candidate: (
+                            candidates.get(candidate, [0, 0])[0]
+                            * candidates.get(candidate, [0, 0])[1]
+                        ),
+                    )
+            except (TypeError, ValueError):
+                pass
+
+        src = img.get("src")
+        return urljoin(AMAZON_HOME, src) if src else None
 
     def _prices(self, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float]]:
         current = None
@@ -513,6 +874,7 @@ class AmazonWomensDressScraper(BaseScraper):
             "category":            data.category,
             "url":                 data.url,
             "title":               data.title,
+            "image":               data.image,
             "brand":               data.brand,
             "material":            attrs.get("material_type"),
             "neck_type":           attrs.get("neck_style"),
@@ -525,5 +887,6 @@ class AmazonWomensDressScraper(BaseScraper):
                 "rating":            review.get("rating"),
                 "review_count":      review.get("review_count", 0),
                 "star_distribution": review.get("star_distribution", {}),
+                "comment_json":      review.get("comment_json", []),
             }),
         }
