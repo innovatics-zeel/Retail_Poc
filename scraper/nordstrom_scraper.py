@@ -970,11 +970,17 @@ class NordstromScraper(BaseScraper):
     def _extract_product_links(self, soup: BeautifulSoup) -> list[str]:
         seen: set[str] = set()
         links: list[str] = []
+        all_hrefs: list[str] = []
         for a in soup.find_all("a", href=True):
-            path = urlparse(a["href"]).path
+            href = a["href"]
+            all_hrefs.append(href)
+            path = urlparse(href).path
             if path.startswith("/s/") and path not in seen:
                 seen.add(path)
                 links.append(urljoin("https://www.nordstrom.com", path))
+        if not links and all_hrefs:
+            sample = [h for h in all_hrefs if "nordstrom.com" in h or h.startswith("/")][:20]
+            logger.warning(f"  [DEBUG] No /s/ links found. Sample hrefs on page: {sample}")
         return links
 
     def _extract_json_ld(self, soup: BeautifulSoup) -> Optional[dict]:

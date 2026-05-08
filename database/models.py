@@ -257,3 +257,37 @@ class Recommendation(Base):
 
     def __repr__(self):
         return f"<Recommendation {self.pattern_type} | {self.status}>"
+
+
+# class VariantSnapshot(Base):
+#     __tablename__ = "variant_snapshots"
+#     id             = Column(Integer,         primary_key=True, index=True)
+#     variant_id     = Column(Integer,         ForeignKey("product_variants.variant_id"), nullable=False, index=True)
+#     price          = Column(Numeric(10, 2),  nullable=True)
+#     original_price = Column(Numeric(10, 2),  nullable=True)
+#     discount_pct   = Column(Numeric(5, 2),   nullable=True)
+#     is_available   = Column(Boolean,         nullable=False, default=True)
+#     low_stock      = Column(Boolean,         nullable=False, default=False)
+#     stock_note     = Column(String(200),     nullable=True)
+#     scraped_at     = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+#     def __repr__(self):
+#         return f"<VariantSnapshot variant={self.variant_id} price={self.price} at={self.scraped_at}>"
+
+
+# class ProductReviewSnapshot(Base):
+#     __tablename__ = "product_review_snapshots"
+#     id           = Column(Integer,        primary_key=True, index=True)
+#     product_id   = Column(Integer,        ForeignKey("products.product_id"), nullable=False, index=True)
+#     rating_avg   = Column(Numeric(3, 1),  nullable=True)
+#     review_count = Column(Integer,        nullable=False, default=0)
+#     fit_feedback = Column(String(100),    nullable=True)
+#     stars_1_pct  = Column(SmallInteger,   nullable=True)
+#     stars_2_pct  = Column(SmallInteger,   nullable=True)
+#     stars_3_pct  = Column(SmallInteger,   nullable=True)
+#     stars_4_pct  = Column(SmallInteger,   nullable=True)
+#     stars_5_pct  = Column(SmallInteger,   nullable=True)
+#     scraped_at   = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+#     def __repr__(self):
+#         return f"<ProductReviewSnapshot product={self.product_id} rating={self.rating_avg} at={self.scraped_at}>"
