@@ -17,10 +17,16 @@ from sqlalchemy.orm import Session
 from database.connection import SessionLocal
 from database.models import (
     Brand, Category, Color, Size, Material, NeckType, SleeveType, Fit, Pattern,
-    Product, ProductVariant, Review,
+    Platform, Product, ProductVariant, Review,
 )
 
 MAX_REALISTIC_REVIEW_COUNT = 1_000_000
+
+PLATFORM_SEEDS = [
+    (1, "amazon", "Amazon", "https://www.amazon.com"),
+    (2, "nordstrom", "Nordstrom", "https://www.nordstrom.com"),
+    (3, "walmart", "Walmart", "https://www.walmart.com"),
+]
 
 # ── Color-family mapping ──────────────────────────────────────────────────────
 # Keywords are matched as substrings (case-insensitive) in the color name.
@@ -68,6 +74,32 @@ def _get_or_create_brand(db: Session, name: Optional[str]) -> Optional[int]:
         db.add(obj)
         db.flush()
     return obj.brand_id
+
+
+def _ensure_platforms(db: Session) -> None:
+    """Keep platform FK seeds present even if an older DB missed the seed migration."""
+    for platform_id, name, display_name, base_url in PLATFORM_SEEDS:
+        platform = db.query(Platform).filter_by(name=name).first()
+        if platform:
+            platform.display_name = platform.display_name or display_name
+            platform.base_url = platform.base_url or base_url
+            continue
+        db.add(Platform(
+            id=platform_id,
+            name=name,
+            display_name=display_name,
+            base_url=base_url,
+        ))
+    db.flush()
+
+
+def _resolve_platform_id(db: Session, requested_id: Optional[int]) -> Optional[int]:
+    if requested_id and db.query(Platform.id).filter_by(id=requested_id).scalar():
+        return requested_id
+    for seed_id, name, _display_name, _base_url in PLATFORM_SEEDS:
+        if requested_id == seed_id:
+            return db.query(Platform.id).filter_by(name=name).scalar()
+    return requested_id
 
 
 def _get_or_create_category(db: Session, name: str, gender: Optional[str] = None) -> Optional[int]:
@@ -179,6 +211,74 @@ def _get_or_create_product(
 
 # ── Variant / review writers ──────────────────────────────────────────────────
 
+def _parse_review_date(text: Optional[str]) -> Optional[datetime]:
+    if not text:
+        return None
+    cleaned = re.sub(r"^Reviewed\s+.*?\s+on\s+", "", str(text).strip(), flags=re.I)
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _format_review_date(text: Optional[str]) -> str:
+    parsed = _parse_review_date(text)
+    return parsed.strftime("%d-%m-%Y") if parsed else (str(text).strip() if text else "")
+
+
+def _comment_key(comment: dict) -> tuple[str, str, str]:
+    return (
+        _format_review_date(comment.get("date")).lower(),
+        re.sub(r"\s+", " ", str(comment.get("title", ""))).strip().lower(),
+        re.sub(r"\s+", " ", str(comment.get("description", ""))).strip().lower(),
+    )
+
+
+def _merge_review_comments(existing_comments: list[dict], incoming_comments: list[dict]) -> list[dict]:
+    """
+    Keep the saved comments and append only unseen comments from the scraper.
+    Scraped Amazon reviews are newest-first, so dates older than the latest saved
+    comment are ignored unless there is no saved date yet.
+    """
+    existing = [c for c in existing_comments if isinstance(c, dict)]
+    incoming = [c for c in incoming_comments if isinstance(c, dict)]
+    latest_existing = max(
+        (date for date in (_parse_review_date(c.get("date")) for c in existing) if date),
+        default=None,
+    )
+
+    merged: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add_comment(comment: dict) -> None:
+        key = _comment_key(comment)
+        if key in seen:
+            return
+        seen.add(key)
+        merged.append({
+            "date": _format_review_date(comment.get("date")),
+            "title": comment.get("title", ""),
+            "description": comment.get("description", ""),
+            "color": comment.get("color"),
+            "size": comment.get("size"),
+        })
+
+    for comment in existing:
+        add_comment(comment)
+
+    for comment in incoming:
+        comment_date = _parse_review_date(comment.get("date"))
+        if latest_existing and comment_date and comment_date < latest_existing:
+            continue
+        add_comment(comment)
+
+    merged.sort(key=lambda c: _parse_review_date(c.get("date")) or datetime.min, reverse=True)
+    for idx, comment in enumerate(merged, start=1):
+        comment["comment_count"] = idx
+    return merged
+
 def _parse_price_text(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
@@ -285,7 +385,7 @@ def _insert_variant(
         db.flush()
 
 
-def _insert_review(db: Session, product_id: int, review_data: dict) -> None:
+def _upsert_review(db: Session, product_id: int, review_data: dict) -> None:
     star = review_data.get("star_distribution", {})
     pros = review_data.get("pros")
     cons = review_data.get("cons")
@@ -324,6 +424,8 @@ def write_normalized(db: Session, values: dict) -> None:
     gender = gender_map.get(values.get("gender_id") or 0, "unisex")
     category_name = values.get("category", "")
 
+    _ensure_platforms(db)
+    values["platform_id"] = _resolve_platform_id(db, values.get("platform_id")) or values.get("platform_id")
     brand_id    = _get_or_create_brand(db, values.get("brand"))
     category_id = _get_or_create_category(db, category_name, gender)
     product_id  = _get_or_create_product(db, values, brand_id, category_id)
@@ -384,7 +486,7 @@ def write_normalized(db: Session, values: dict) -> None:
     review_json = values.get("review_json")
     if review_json:
         try:
-            _insert_review(db, product_id, json.loads(review_json))
+            _upsert_review(db, product_id, json.loads(review_json))
         except (json.JSONDecodeError, TypeError):
             pass
 
