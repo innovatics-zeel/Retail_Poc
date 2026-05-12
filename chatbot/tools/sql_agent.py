@@ -143,7 +143,7 @@ def _validate_sql(query: str) -> bool:
 
 
 def _generate_sql(question: str, chat_history: list) -> str:
-    history_ctx = format_history_for_prompt(chat_history, max_messages=6)
+    history_ctx = format_history_for_prompt(chat_history, max_messages=4)
     prompt = f"{history_ctx}Current question:\n{question}\n\nGenerate a PostgreSQL SELECT query."
     return llm.generate_response(
         system_prompt=_SQL_SYSTEM_PROMPT,
@@ -171,13 +171,17 @@ def _execute_sql(query: str) -> list[dict]:
     return result
 
 
+_MAX_RESPONSE_ROWS = 15
+
+
 def _build_response(question: str, data: list[dict], chat_history: list) -> str:
-    history_ctx = format_history_for_prompt(chat_history, max_messages=4)
+    history_ctx = format_history_for_prompt(chat_history, max_messages=2)
+    display = data[:_MAX_RESPONSE_ROWS]
     prompt = (
         f"{history_ctx}"
         f"Current question:\n{question}\n\n"
-        f"SQL Result ({len(data)} rows):\n"
-        f"{json.dumps(data, default=str, indent=2)}"
+        f"SQL Result ({len(data)} rows, showing {len(display)}):\n"
+        f"{json.dumps(display, default=str)}"
     )
     return llm.generate_response(
         system_prompt=_RESPONSE_SYSTEM_PROMPT,

@@ -3,10 +3,20 @@ app.py — Innovatics Program 1: Product & Market Intelligence
 Run: streamlit run streamlit_app/app.py
 """
 import sys
+import os
+import re
+import uuid
 import warnings
 warnings.filterwarnings("ignore")
 
 sys.path.insert(0, ".")
+
+# Add chatbot directory so orchestrator and its dependencies can be imported
+_CHATBOT_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chatbot")
+)
+if _CHATBOT_DIR not in sys.path:
+    sys.path.insert(0, _CHATBOT_DIR)
 
 import base64
 from html import escape
@@ -320,6 +330,293 @@ st.markdown(f"""
         .filter-row, .style-grid {{ grid-template-columns:1fr; }}
         .signal-card {{ border-right:0; border-bottom:1px solid var(--line); }}
     }}
+
+    /* ── Chatbot debug badges (Layer 02) ─────────────────────── */
+    .cb-badge {{
+        display:inline-block; padding:2px 9px; border-radius:12px;
+        font-size:.69rem; font-weight:800; letter-spacing:.04em;
+        text-transform:uppercase; margin-right:6px; vertical-align:middle;
+    }}
+    .cb-sql      {{ background:#dbeafe; color:#1d4ed8; }}
+    .cb-vector   {{ background:#dcfce7; color:#15803d; }}
+    .cb-trend    {{ background:#fef9c3; color:#a16207; }}
+    .cb-hybrid   {{ background:#ede9fe; color:#7c3aed; }}
+    .cb-fallback {{ background:#f3f4f6; color:#6b7280; }}
+    .cb-conf     {{ font-size:.69rem; color:#9ca3af; vertical-align:middle; }}
+    .cb-resolved {{
+        font-size:.73rem; color:#6366f1; padding:3px 9px;
+        background:#eef2ff; border-left:3px solid #6366f1;
+        border-radius:4px; margin:5px 0 2px; display:inline-block;
+    }}
+
+    /* ══════════════════════════════════════════════════════════
+       CHAT INTERFACE — production-grade light theme
+       ══════════════════════════════════════════════════════════ */
+
+    /* ── Scroll container background ───────────────────────── */
+    [data-testid="stVerticalBlockBorderWrapper"] {{
+        background: #F6F9FC !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }}
+
+    /* ── Message row — full width, no auto-margin collapse ──── */
+    @keyframes msg-slide-in {{
+        from {{ opacity: 0; transform: translateY(8px); }}
+        to   {{ opacity: 1; transform: translateY(0); }}
+    }}
+    [data-testid="stChatMessage"] {{
+        animation: msg-slide-in .2s ease forwards !important;
+        width: 100% !important;
+        margin: 14px 0 !important;
+        padding: 0 12px !important;
+        box-sizing: border-box !important;
+        background: transparent !important;
+    }}
+
+    /* ── USER bubble — navy gradient, right-aligned ─────────── */
+    [data-testid="stChatMessage"]:has([aria-label*="from user"]) {{
+        flex-direction: row-reverse !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from user"] {{
+        background: linear-gradient(135deg, {INK} 0%, #1e3a5c 100%) !important;
+        border: none !important;
+        border-radius: 18px 18px 4px 18px !important;
+        padding: 12px 16px !important;
+        box-shadow: 0 4px 14px rgba(15,27,45,.22) !important;
+        max-width: 76% !important;
+        min-width: 60px !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from user"] p,
+    [data-testid="stChatMessageContent"][aria-label*="from user"] li,
+    [data-testid="stChatMessageContent"][aria-label*="from user"] strong,
+    [data-testid="stChatMessageContent"][aria-label*="from user"] em {{
+        color: rgba(255,255,255,.93) !important;
+        margin-bottom: 4px !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from user"] code {{
+        background: rgba(255,255,255,.18) !important;
+        color: #fff !important;
+        border-radius: 4px !important;
+        padding: 1px 5px !important;
+    }}
+
+    /* ── ASSISTANT bubble — white card, expands to fill row ─── */
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] {{
+        background: #FFFFFF !important;
+        border: none !important;
+        border-radius: 4px 18px 18px 18px !important;
+        padding: 12px 16px !important;
+        box-shadow: 0 2px 10px rgba(15,27,45,.07) !important;
+        flex: 1 !important;
+        min-width: 0 !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] p,
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] li {{
+        color: #1a2e44 !important;
+    }}
+
+    /* ── Bubble typography ──────────────────────────────────── */
+    [data-testid="stChatMessageContent"] p {{
+        font-size: .92rem !important;
+        line-height: 1.7 !important;
+        margin-bottom: 6px !important;
+    }}
+    [data-testid="stChatMessageContent"] p:last-child {{ margin-bottom: 0 !important; }}
+    [data-testid="stChatMessageContent"] ul,
+    [data-testid="stChatMessageContent"] ol {{
+        font-size: .92rem !important;
+        line-height: 1.7 !important;
+        padding-left: 20px !important;
+        margin: 4px 0 !important;
+    }}
+    [data-testid="stChatMessageContent"] li {{ margin-bottom: 4px !important; }}
+    [data-testid="stChatMessageContent"] strong {{ font-weight: 800 !important; }}
+    [data-testid="stChatMessageContent"] code {{
+        background: #EEF3F8 !important;
+        border-radius: 4px !important;
+        padding: 1px 5px !important;
+        font-size: .81rem !important;
+        color: {INK} !important;
+    }}
+
+    /* ── Avatar ─────────────────────────────────────────────── */
+    [data-testid="stChatMessageAvatar"] {{
+        border-radius: 10px !important;
+        flex-shrink: 0 !important;
+        align-self: flex-end !important;
+    }}
+
+    /* ── All buttons — light pill (Streamlit 1.35 uses .stButton class) ── */
+    .stButton button,
+    [data-testid="stButton"] button,
+    [data-testid="stBaseButton-secondary"] {{
+        background:       #F0F5FA !important;
+        background-color: #F0F5FA !important;
+        color:            #334155 !important;
+        border:           1px solid #C8D6E5 !important;
+        border-radius:    999px !important;
+        font-size:        .78rem !important;
+        font-weight:      650 !important;
+        padding:          6px 16px !important;
+        min-height:       36px !important;
+        box-shadow:       none !important;
+        transition: background .15s ease, border-color .15s ease,
+                    color .15s ease, transform .12s ease !important;
+    }}
+    .stButton button:hover,
+    [data-testid="stButton"] button:hover,
+    [data-testid="stBaseButton-secondary"]:hover {{
+        background:       #EBF6FF !important;
+        background-color: #EBF6FF !important;
+        border-color:     {ACCENT} !important;
+        color:            {ACCENT} !important;
+        transform:        translateY(-1px) !important;
+    }}
+    .stButton button:active,
+    [data-testid="stButton"] button:active,
+    [data-testid="stBaseButton-secondary"]:active {{
+        transform: translateY(0) !important;
+    }}
+
+    /* ── Primary (Send) button — blue ───────────────────────── */
+    .stButton button[kind="primary"],
+    [data-testid="stButton"] button[kind="primary"],
+    [data-testid="stBaseButton-primary"] {{
+        background:       {ACCENT} !important;
+        background-color: {ACCENT} !important;
+        border-color:     {ACCENT} !important;
+        color:            #FFFFFF !important;
+        border-radius:    12px !important;
+        font-weight:      700 !important;
+        letter-spacing:   .01em !important;
+        box-shadow:       0 2px 8px rgba(8,165,214,.28) !important;
+        transition: transform .12s ease, box-shadow .15s ease,
+                    background .12s ease !important;
+    }}
+    .stButton button[kind="primary"]:hover,
+    [data-testid="stButton"] button[kind="primary"]:hover,
+    [data-testid="stBaseButton-primary"]:hover {{
+        background:       #0794BF !important;
+        background-color: #0794BF !important;
+        border-color:     #0794BF !important;
+        transform:        translateY(-1px) !important;
+        box-shadow:       0 5px 16px rgba(8,165,214,.38) !important;
+    }}
+    .stButton button[kind="primary"]:active,
+    [data-testid="stBaseButton-primary"]:active {{
+        transform: translateY(0) !important;
+    }}
+
+    /* ── Response metric highlights ─────────────────────────── */
+    .rh-pct   {{ color:#0794BF; font-weight:800; }}
+    .rh-money {{ color:#18a468; font-weight:800; }}
+    .rh-num   {{ color:{INK}; font-weight:800; background:#EEF3F8;
+                 border-radius:3px; padding:1px 4px; font-size:.88em; }}
+
+    /* ── Response list + heading polish ─────────────────────── */
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] ul li::marker,
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] ol li::marker {{
+        color: {ACCENT} !important;
+        font-weight: 800 !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] li {{
+        margin-bottom: 5px !important;
+        padding-left:  2px !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] h3,
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] h4 {{
+        font-size:    .92rem !important;
+        color:        {INK} !important;
+        font-weight:  900 !important;
+        margin:       10px 0 4px !important;
+        padding-bottom: 3px !important;
+        border-bottom:  2px solid #EEF3F8 !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] hr {{
+        border: none !important;
+        border-top: 1px solid #EEF3F8 !important;
+        margin: 8px 0 !important;
+    }}
+    [data-testid="stChatMessageContent"][aria-label*="from assistant"] blockquote {{
+        border-left:  3px solid {ACCENT} !important;
+        background:   #F0F8FE !important;
+        border-radius: 0 6px 6px 0 !important;
+        margin:       8px 0 !important;
+        padding:      8px 12px !important;
+        color:        #1a3a52 !important;
+    }}
+
+    /* ── Debug expander ──────────────────────────────────────── */
+    [data-testid="stExpander"] summary {{
+        font-size: .72rem !important;
+        color: #8fa3b8 !important;
+        padding: 4px 8px !important;
+    }}
+    [data-testid="stExpander"] summary:hover {{
+        color: {ACCENT} !important;
+    }}
+    [data-testid="stExpander"] > div {{
+        border: 1px solid #E8EFF7 !important;
+        border-radius: 6px !important;
+        padding: 8px !important;
+        background: #FAFCFF !important;
+    }}
+
+    /* ── Text input — rounded, white, soft shadow ───────────── */
+    [data-baseweb="input"] > div {{
+        border-radius: 18px !important;
+        border-color: #C8D6E5 !important;
+        background: #FFFFFF !important;
+        min-height: 46px !important;
+        box-shadow: 0 1px 6px rgba(15,27,45,.05) !important;
+        transition: border-color .15s ease, box-shadow .15s ease !important;
+    }}
+    [data-baseweb="input"] > div:focus-within {{
+        border-color: {ACCENT} !important;
+        box-shadow: 0 0 0 3px rgba(8,165,214,.12) !important;
+    }}
+    [data-baseweb="input"] input {{
+        padding: 10px 18px !important;
+        font-size: .9rem !important;
+        color: {INK} !important;
+    }}
+
+    /* ── Chat panel header pill badges ─────────────────────── */
+    .chat2-header-badge {{
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 9px; border-radius: 10px;
+        font-size: .67rem; font-weight: 800; letter-spacing: .04em;
+        text-transform: uppercase;
+    }}
+    .chat2-header-badge.sql    {{ background:#dbeafe; color:#1d4ed8; }}
+    .chat2-header-badge.vec    {{ background:#dcfce7; color:#15803d; }}
+    .chat2-header-badge.hybrid {{ background:#ede9fe; color:#7c3aed; }}
+
+    /* ── Typing dots animation ──────────────────────────────── */
+    @keyframes typing-pulse {{
+        0%, 100% {{ opacity: .3; transform: translateY(0); }}
+        50%       {{ opacity: 1; transform: translateY(-4px); }}
+    }}
+    .typing-indicator {{
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 2px;
+    }}
+    .typing-dot {{
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #8fa3b8; display: inline-block;
+        animation: typing-pulse 1.2s ease infinite;
+    }}
+    .typing-dot:nth-child(2) {{ animation-delay: .18s; }}
+    .typing-dot:nth-child(3) {{ animation-delay: .36s; }}
+
+    /* ── Input area separator ───────────────────────────────── */
+    .chat-input-separator {{
+        border-top: 1px solid #E2EAF4;
+        margin: 6px 0 8px;
+        background: #fff;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -454,6 +751,144 @@ def _money(value) -> str:
     if value is None or pd.isna(value):
         return "$--"
     return f"${float(value):,.0f}"
+
+
+# ── Chatbot helpers (Layer 02) ────────────────────────────────────────────────
+
+@st.cache_resource(show_spinner=False)
+def _get_chatbot():
+    """Import and initialise the RAG orchestrator once per process."""
+    try:
+        from orchestrator import orchestrator as _orch
+        from embedding_manager import setup_table
+        try:
+            setup_table()
+        except Exception:
+            pass
+        return _orch, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+_CB_BADGE = {
+    "sql_agent":          ("SQL",      "cb-sql"),
+    "vector_agent":       ("Vector",   "cb-vector"),
+    "trend_engine_agent": ("Trend",    "cb-trend"),
+    "hybrid_agent":       ("Hybrid",   "cb-hybrid"),
+    "fallback_agent":     ("Fallback", "cb-fallback"),
+    "fallback":           ("Fallback", "cb-fallback"),
+}
+
+
+def _chat2_render_debug(debug: dict) -> None:
+    if not debug:
+        return
+    intent = debug.get("intent") or {}
+    tool_response = debug.get("tool_response") or {}
+    resolved = debug.get("resolved_question")
+    source = tool_response.get("source", "")
+
+    agent = intent.get("agent") or source or ""
+    confidence = float(intent.get("confidence") or 0)
+    reason = intent.get("reason") or ""
+    label, cls = _CB_BADGE.get(agent, ("Unknown", "cb-fallback"))
+    filled = round(confidence * 5)
+    bar = "●" * filled + "○" * (5 - filled)
+
+    with st.expander(f"Debug · {label} {confidence:.0%}", expanded=False):
+        st.markdown(
+            f'<span class="cb-badge {cls}">{label}</span>'
+            f'<span class="cb-conf">{bar} {confidence:.0%}'
+            f"{' — ' + escape(reason) if reason else ''}</span>",
+            unsafe_allow_html=True,
+        )
+        if resolved:
+            st.markdown(
+                f'<div class="cb-resolved">Understood as: <em>{escape(resolved)}</em></div>',
+                unsafe_allow_html=True,
+            )
+
+    if not tool_response:
+        return
+
+    if source == "sql_agent":
+        data = tool_response.get("data") or []
+        with st.expander(f"SQL Results · {len(data)} rows", expanded=False):
+            if tool_response.get("query"):
+                st.code(tool_response["query"], language="sql")
+            if data:
+                st.dataframe(pd.DataFrame(data), use_container_width=True)
+
+    elif source == "vector_agent":
+        chunks = tool_response.get("data") or []
+        if chunks:
+            with st.expander(f"Review Sources · {len(chunks)} chunks", expanded=False):
+                for c in chunks:
+                    st.markdown(
+                        f"**Similarity:** {c.get('similarity', 0):.2%} · "
+                        f"**Type:** `{c.get('chunk_type', '')}` · "
+                        f"**Product ID:** {c.get('product_id', '')}"
+                    )
+                    st.caption(c.get("review_text", ""))
+                    st.divider()
+
+    elif source == "hybrid_agent":
+        sql_data = tool_response.get("sql_data") or []
+        sql_query = tool_response.get("sql_query", "")
+        vec_data = tool_response.get("vector_data") or []
+        if sql_data or sql_query:
+            with st.expander(f"Matching Products · {len(sql_data)} found", expanded=False):
+                if sql_query:
+                    st.code(sql_query, language="sql")
+                if sql_data:
+                    st.dataframe(pd.DataFrame(sql_data), use_container_width=True)
+        if vec_data:
+            with st.expander(f"Customer Reviews · {len(vec_data)} chunks", expanded=False):
+                for c in vec_data:
+                    st.markdown(
+                        f"**Similarity:** {c.get('similarity', 0):.2%} · "
+                        f"**Type:** `{c.get('chunk_type', '')}` · "
+                        f"**Product ID:** {c.get('product_id', '')}"
+                    )
+                    st.caption(c.get("review_text", ""))
+                    st.divider()
+
+    elif source == "trend_engine_agent":
+        data = tool_response.get("data") or []
+        if data:
+            with st.expander("Trend Analytics Data", expanded=False):
+                st.dataframe(pd.DataFrame(data), use_container_width=True)
+
+
+# Matches: $12.4M  $1,234  34.5%  1,234,567  2.5x  (outside code spans)
+_METRIC_RE = re.compile(
+    r'(?<![`\w$])'
+    r'(\$[\d,]+(?:\.\d+)?[kKmMbB]?'
+    r'|\d+(?:\.\d+)?%'
+    r'|\d{1,3}(?:,\d{3})+(?:\.\d+)?'
+    r'|\d+(?:\.\d+)?[xX]\b'
+    r')(?![`\w%])',
+)
+
+
+def _render_chat_response(text: str) -> None:
+    """Render a chat response with metric highlighting and clean typography."""
+    # Split on code fences / inline code so we never mangle code blocks
+    segments = re.split(r'(```[\s\S]*?```|`[^`\n]+`)', text)
+
+    def _hl(m: re.Match) -> str:
+        v = m.group(1)
+        if "%" in v:
+            return f'<span class="rh-pct">{v}</span>'
+        if "$" in v:
+            return f'<span class="rh-money">{v}</span>'
+        return f'<span class="rh-num">{v}</span>'
+
+    out = []
+    for idx, seg in enumerate(segments):
+        out.append(seg if idx % 2 == 1 else _METRIC_RE.sub(_hl, seg))
+
+    st.markdown("".join(out), unsafe_allow_html=True)
 
 
 def _image_data_uri(value) -> str:
@@ -1349,78 +1784,169 @@ with tab2:
         with right:
             st.markdown(f"""
 <div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Conversational Market Analyst</div>
-    <div class="panel-sub">Key finding · supporting data · implication</div>
+  <div class="panel-head" style="min-height:54px; padding:0 18px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,{INK} 0%,#1c3353 100%);
+                  display:grid;place-items:center;font-size:.9rem;flex-shrink:0;">🤖</div>
+      <div>
+        <div class="panel-title" style="line-height:1.1;">Conversational Market Analyst</div>
+        <div style="color:{MUTED};font-size:.71rem;margin-top:1px;">Active filters:
+          <strong style="color:{INK};">{_safe(_visible_category)}</strong> ·
+          <strong style="color:{INK};">{_safe(_visible_platform)}</strong>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
+      <span class="chat2-header-badge sql">SQL</span>
+      <span class="chat2-header-badge vec">Vector</span>
+      <span class="chat2-header-badge hybrid">Hybrid</span>
+    </div>
   </div>
-  <div class="panel-body">
-    <div class="why-box"><b>WHY</b> Ask about SKU-level attributes, platform gaps, price bands, review sentiment, or white-space moves. Answers cite the active filters: <strong>{_safe(_visible_category)}</strong> · <strong>{_safe(_visible_platform)}</strong>.</div>
+  <div style="padding:10px 18px 12px; border-bottom:1px solid #edf2f6;">
+    <div style="background:#EDF8FF;border-left:3px solid {ACCENT};border-radius:5px;
+                padding:9px 13px;font-size:.78rem;line-height:1.42;color:#1a3a52;">
+      Ask about SKU attributes, platform gaps, price bands, review sentiment, or white-space
+      opportunities — answers are grounded in your live product &amp; review data.
+    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-            question = st.text_input(
-                "Market question",
-                value=st.session_state.get("conv_question", SUGGESTED[0][1]),
-                placeholder="e.g. Which attributes are gaining momentum fastest?",
-                key="conv_input",
+            st.markdown(
+                "<div style='background:#fff;border:1px solid #E2EAF4;border-radius:12px;"
+                "padding:12px 14px 10px;margin-top:8px;'>",
+                unsafe_allow_html=True,
             )
-            bcols = st.columns(3)
-            for i, (_, q) in enumerate(SUGGESTED[:3]):
-                if bcols[i].button(f"Use Q{i + 1}", key=f"sug_{i}", use_container_width=True):
-                    st.session_state["conv_question"] = q
+
+            # ── Session state init ────────────────────────────────────────────
+            if "chat2_session_id" not in st.session_state:
+                st.session_state["chat2_session_id"] = str(uuid.uuid4())
+            if "chat2_messages" not in st.session_state:
+                st.session_state["chat2_messages"] = []
+            if "chat2_pending" not in st.session_state:
+                st.session_state["chat2_pending"] = None
+            if "chat2_input_ver" not in st.session_state:
+                st.session_state["chat2_input_ver"] = 0
+
+            # ── Load chatbot (cached across reruns) ───────────────────────────
+            _orch, _chatbot_err = _get_chatbot()
+
+            if _chatbot_err:
+                st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
+            else:
+                # ── Chat history ──────────────────────────────────────────────
+                chat_area = st.container(height=460, border=False)
+                with chat_area:
+                    if not st.session_state["chat2_messages"]:
+                        st.markdown(
+                            "<div style='display:flex;flex-direction:column;align-items:center;"
+                            "justify-content:center;height:380px;gap:14px;'>"
+                            "<div style='width:52px;height:52px;border-radius:14px;"
+                            "background:linear-gradient(135deg,#0F1B2D 0%,#1c3353 100%);"
+                            "display:grid;place-items:center;font-size:1.4rem;"
+                            "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
+                            "<div style='text-align:center;'>"
+                            "<div style='color:#3a4d62;font-size:.9rem;font-weight:700;"
+                            "margin-bottom:5px;'>Ready to analyse your data</div>"
+                            "<div style='color:#8fa3b8;font-size:.79rem;line-height:1.5;max-width:300px;'>"
+                            "Ask about products, pricing, trends, or competitor gaps — "
+                            "answers are grounded in live SKU &amp; review data."
+                            "</div></div></div>",
+                            unsafe_allow_html=True,
+                        )
+                    for msg in st.session_state["chat2_messages"]:
+                        _avatar = "🤖" if msg["role"] == "assistant" else "👤"
+                        with st.chat_message(msg["role"], avatar=_avatar):
+                            if msg["role"] == "assistant":
+                                _render_chat_response(msg["content"])
+                            else:
+                                st.markdown(msg["content"])
+                            if msg.get("debug"):
+                                _chat2_render_debug(msg["debug"])
+
+                # ── Suggestion chips ──────────────────────────────────────────
+                st.markdown(
+                    "<div style='margin:8px 0 4px;color:#8fa3b8;font-size:.71rem;"
+                    "font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>"
+                    "Quick questions</div>",
+                    unsafe_allow_html=True,
+                )
+                bcols = st.columns(3)
+                for i, (title, q) in enumerate(SUGGESTED[:3]):
+                    if bcols[i].button(
+                        title, key=f"c2_sug_{i}",
+                        use_container_width=True, help=q,
+                    ):
+                        st.session_state["chat2_pending"] = q
+                        st.rerun()
+
+                # ── Input row ─────────────────────────────────────────────────
+                st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
+                in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
+                with in_col:
+                    typed = st.text_input(
+                        "chat2_typed",
+                        value="",
+                        placeholder="Ask about attributes, gaps, pricing, reviews…",
+                        key=f"chat2_input_{st.session_state['chat2_input_ver']}",
+                        label_visibility="collapsed",
+                    )
+                with send_col:
+                    send_clicked = st.button(
+                        "Send →", type="primary", key="chat2_send",
+                        use_container_width=True,
+                    )
+                with clr_col:
+                    if st.button("Clear", key="chat2_clear", use_container_width=True):
+                        _orch.clear_session(st.session_state["chat2_session_id"])
+                        st.session_state["chat2_messages"] = []
+                        st.session_state["chat2_session_id"] = str(uuid.uuid4())
+                        st.rerun()
+
+                # ── Process question ──────────────────────────────────────────
+                pending_q = st.session_state.get("chat2_pending")
+                if pending_q:
+                    st.session_state["chat2_pending"] = None
+
+                user_q = pending_q or (
+                    typed.strip() if send_clicked and typed.strip() else None
+                )
+
+                if user_q:
+                    st.session_state["chat2_input_ver"] += 1  # bump key → fresh empty widget
+                    st.session_state["chat2_messages"].append(
+                        {"role": "user", "content": user_q}
+                    )
+                    with chat_area:
+                        with st.chat_message("assistant", avatar="🤖"):
+                            st.markdown(
+                                '<div class="typing-indicator">'
+                                '<span class="typing-dot"></span>'
+                                '<span class="typing-dot"></span>'
+                                '<span class="typing-dot"></span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
+                    result = _orch.process_question(
+                        session_id=st.session_state["chat2_session_id"],
+                        question=user_q,
+                    )
+                    response = result.get("response") or "Unable to process the request."
+                    debug = {
+                        "intent": result.get("intent"),
+                        "tool_response": result.get("tool_response"),
+                        "resolved_question": result.get("resolved_question"),
+                    }
+                    st.session_state["chat2_messages"].append({
+                        "role": "assistant",
+                        "content": response,
+                        "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
+                    })
                     st.rerun()
 
-            ask_clicked = st.button("Ask Market Analyst", type="primary", key="ask_btn", use_container_width=True)
-            if ask_clicked and question.strip():
-                with st.spinner("Analysing data and generating answer..."):
-                    try:
-                        import anthropic
-                        from config.settings import settings
+            st.markdown("</div>", unsafe_allow_html=True)  # close chat white card
 
-                        data_ctx = data_summary_for_llm(df)
-                        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-                        response = client.messages.create(
-                            model="claude-sonnet-4-6",
-                            max_tokens=1500,
-                            system="""You are a senior retail market intelligence analyst at Innovatics.
-You have access to scraped US apparel marketplace data stored in a normalized database
-(products, product_variants, reviews, brands, categories, colors, sizes, platforms).
-Answer questions concisely and specifically, always citing numbers from the data.
-Structure your answer with: Key Finding, Supporting Data, Implication.
-If the data context does not contain enough information, say so clearly — never hallucinate.
-Keep answers under 300 words.""",
-                            messages=[{
-                                "role": "user",
-                                "content": f"Data context:\n{data_ctx}\n\nQuestion: {question}",
-                            }],
-                        )
-                        st.session_state["conv_answer"] = response.content[0].text
-                    except Exception as e:
-                        st.session_state["conv_answer"] = (
-                            f"Could not connect to Claude API: {e}\n\n"
-                            "Fallback read: the local dataset is loaded, but live answer generation needs ANTHROPIC_API_KEY."
-                        )
-
-            answer = st.session_state.get("conv_answer")
-            if answer:
-                st.markdown(f"""
-<div class="answer-shell">
-  <div class="panel-head">
-    <div class="panel-title">Answer</div>
-    <div class="panel-sub">Generated from active data context</div>
-  </div>
-  <div class="answer-body">{_safe(answer).replace(chr(10), '<br>')}</div>
-</div>
-""", unsafe_allow_html=True)
-
-                snapshot_cols = ["title", "brand", "platform", "category", "current_price", "rating", "review_count"]
-                snapshot_cols = [c for c in snapshot_cols if c in df.columns]
-                st.dataframe(
-                    top_products(df, by="review_count", n=5)[snapshot_cols],
-                    use_container_width=True, hide_index=True,
-                )
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)  # close dashboard-pad
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

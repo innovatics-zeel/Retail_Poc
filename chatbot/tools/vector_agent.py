@@ -69,7 +69,7 @@ def _build_review_summary(
     chunks: list[dict],
     chat_history: list,
 ) -> str:
-    history_ctx = format_history_for_prompt(chat_history, max_messages=4)
+    history_ctx = format_history_for_prompt(chat_history, max_messages=2)
 
     context_parts = []
     for i, chunk in enumerate(chunks, 1):

@@ -48,11 +48,12 @@ def _build_combined_response(
 ) -> str:
     import json
 
-    history_ctx = format_history_for_prompt(chat_history, max_messages=4)
+    history_ctx = format_history_for_prompt(chat_history, max_messages=2)
 
+    display_sql = sql_data[:15]
     sql_section = (
-        json.dumps(sql_data, default=str, indent=2)
-        if sql_data else "No structured product data available."
+        json.dumps(display_sql, default=str)
+        if display_sql else "No structured product data available."
     )
 
     if vector_chunks:
@@ -67,7 +68,7 @@ def _build_combined_response(
     prompt = (
         f"{history_ctx}"
         f"Current question:\n{question}\n\n"
-        f"Product Data ({len(sql_data)} results):\n{sql_section}\n\n"
+        f"Product Data ({len(display_sql)} results):\n{sql_section}\n\n"
         f"Customer Review Context:\n{review_section}"
     )
 

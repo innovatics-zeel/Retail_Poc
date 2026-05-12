@@ -46,7 +46,7 @@ class LLMConfig:
             return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
         if self.provider == "groq":
-            return os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            return os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
         raise ValueError(f"Unsupported LLM provider: {self.provider}")
 

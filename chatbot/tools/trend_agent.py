@@ -71,12 +71,12 @@ def _build_trend_summary(
     data: list[dict],
     chat_history: list,
 ) -> str:
-    history_ctx = format_history_for_prompt(chat_history, max_messages=4)
+    history_ctx = format_history_for_prompt(chat_history, max_messages=2)
     prompt = (
         f"{history_ctx}"
         f"Current question:\n{question}\n\n"
         f"Trend Analytics Data:\n"
-        f"{json.dumps(data, default=str, indent=2)}"
+        f"{json.dumps(data, default=str)}"
     )
     return llm.generate_response(
         system_prompt=_TREND_SYSTEM_PROMPT,
