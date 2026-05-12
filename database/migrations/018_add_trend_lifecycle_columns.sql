@@ -1,4 +1,5 @@
--- Add weekly trend lifecycle fields used by predictive intelligence.
+-- Add trend lifecycle fields used by predictive intelligence.
+-- Column names retain "week" for compatibility, but current scoring uses daily scrape periods.
 ALTER TABLE trend_scores
     ADD COLUMN IF NOT EXISTS lifecycle_stage VARCHAR(20),
     ADD COLUMN IF NOT EXISTS retailer_action TEXT,

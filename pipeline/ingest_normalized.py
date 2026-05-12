@@ -177,6 +177,7 @@ def _get_or_create_product(
         obj.fit = values.get("fit")
         obj.pattern = values.get("pattern")
         obj.care = values.get("care_instructions")
+        obj.scraped_at = datetime.now(timezone.utc)
         return obj.product_id
 
     url = values.get("url", "")
@@ -348,11 +349,6 @@ def _insert_variant(
     image = entry.get("image")
     image_url = entry.get("image_url")
 
-    query = db.query(ProductVariant).filter(ProductVariant.product_id == product_id)
-    query = query.filter(ProductVariant.color_id.is_(None) if color_id is None else ProductVariant.color_id == color_id)
-    query = query.filter(ProductVariant.size_id.is_(None) if size_id is None else ProductVariant.size_id == size_id)
-    variant = query.order_by(ProductVariant.scraped_at.desc(), ProductVariant.variant_id.desc()).first()
-
     values = {
         "product_id": product_id,
         "color_id": color_id,
@@ -375,14 +371,11 @@ def _insert_variant(
         values["image"] = image
     if isinstance(image_url, str) and image_url:
         values["image_url"] = image_url[:1000]
-    if variant is None:
-        variant = ProductVariant(**values)
-        db.add(variant)
-        db.flush()
-    else:
-        for key, value in values.items():
-            setattr(variant, key, value)
-        db.flush()
+
+    # Keep one observation per scrape. Current-product queries already select
+    # the latest row per product/color/size, while predictions need history.
+    db.add(ProductVariant(**values))
+    db.flush()
 
 
 def _upsert_review(db: Session, product_id: int, review_data: dict) -> None:

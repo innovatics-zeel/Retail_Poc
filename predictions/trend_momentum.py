@@ -5,7 +5,7 @@ For each (category, platform, attr_key, attr_value):
   - avg_rating vs category_avg_rating  → rating_delta
   - review count vs category mean      → review velocity signal
   - product share within category      → new_product_share
-  - weekly attribute share curve        → lifecycle stage + retailer action
+  - daily attribute share curve         → lifecycle stage + retailer action
 
 Momentum score is a weighted composite in [-1, 1]:
   0.40 × rating_component + 0.35 × velocity_component + 0.25 × share_component
@@ -29,7 +29,7 @@ RETAIL_ACTIONS = {
     "emerging":     "Test buy: small qty, fast turn",
     "accelerating": "Load up",
     "peak":         "Maintain, prepare exit",
-    "plateau":      "Maintain core qty, monitor weekly",
+    "plateau":      "Maintain core qty, monitor daily",
     "declining":    "Mark down, clear",
     "dead":         "Stop reorder, liquidate residual stock",
 }
@@ -37,12 +37,6 @@ RETAIL_ACTIONS = {
 _WEIGHTS = {"rating": 0.40, "velocity": 0.35, "share": 0.25}
 
 _LOAD_SQL = """
-WITH current_variants AS (
-    SELECT DISTINCT ON (product_id, color_id, size_id)
-        *
-    FROM product_variants
-    ORDER BY product_id, color_id, size_id, scraped_at DESC, variant_id DESC
-)
 SELECT
     p.product_id,
     COALESCE(pat.name, p.pattern)        AS pattern,
@@ -64,7 +58,7 @@ LEFT JOIN LATERAL (
     FROM reviews WHERE product_id = p.product_id
     ORDER BY scraped_at DESC LIMIT 1
 ) r ON TRUE
-LEFT JOIN current_variants pv ON pv.product_id = p.product_id
+LEFT JOIN product_variants pv ON pv.product_id = p.product_id
 LEFT JOIN colors c            ON c.color_id    = pv.color_id
 LEFT JOIN materials mat       ON mat.material_id   = pv.material_id
 LEFT JOIN neck_types nt       ON nt.neck_type_id   = pv.neck_type_id
@@ -84,9 +78,9 @@ def _load_df() -> pd.DataFrame:
         for col in ("rating", "review_count"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce", utc=True)
-        df["observed_week"] = df["observed_at"].dt.tz_convert(None).dt.to_period("W").dt.start_time
-        # Deduplicate product × color × week; product_variants can fan out by size.
-        df = df.drop_duplicates(subset=["product_id", "color_family", "observed_week"])
+        df["observed_day"] = df["observed_at"].dt.tz_convert(None).dt.floor("D")
+        # Deduplicate product × color × day; product_variants can fan out by size.
+        df = df.drop_duplicates(subset=["product_id", "color_family", "observed_day"])
         return df
     finally:
         db.close()
@@ -101,7 +95,7 @@ def _clip_norm(val: float, lo: float, hi: float) -> float:
 
 def _attr_frame(df: pd.DataFrame, attr_key: str) -> pd.DataFrame:
     cols = [
-        "product_id", "category", "platform", "observed_week",
+        "product_id", "category", "platform", "observed_day",
         attr_key, "rating", "review_count",
     ]
     exploded = df[[c for c in cols if c in df.columns]].copy()
@@ -118,8 +112,8 @@ def _attr_frame(df: pd.DataFrame, attr_key: str) -> pd.DataFrame:
     return exploded
 
 
-def _weekly_lifecycle(df: pd.DataFrame, attr_key: str) -> dict[tuple, dict]:
-    if "observed_week" not in df.columns or df["observed_week"].isna().all():
+def _daily_lifecycle(df: pd.DataFrame, attr_key: str) -> dict[tuple, dict]:
+    if "observed_day" not in df.columns or df["observed_day"].isna().all():
         return {}
 
     attr_df = _attr_frame(df, attr_key)
@@ -127,48 +121,48 @@ def _weekly_lifecycle(df: pd.DataFrame, attr_key: str) -> dict[tuple, dict]:
         return {}
 
     totals = (
-        df.dropna(subset=["observed_week"])
-        .drop_duplicates(subset=["product_id", "category", "platform", "observed_week"])
-        .groupby(["category", "platform", "observed_week"])["product_id"]
+        df.dropna(subset=["observed_day"])
+        .drop_duplicates(subset=["product_id", "category", "platform", "observed_day"])
+        .groupby(["category", "platform", "observed_day"])["product_id"]
         .nunique()
         .rename("total_products")
         .reset_index()
     )
 
-    weekly = (
-        attr_df.dropna(subset=["observed_week"])
-        .drop_duplicates(subset=["product_id", "category", "platform", attr_key, "observed_week"])
-        .groupby(["category", "platform", attr_key, "observed_week"])["product_id"]
+    daily = (
+        attr_df.dropna(subset=["observed_day"])
+        .drop_duplicates(subset=["product_id", "category", "platform", attr_key, "observed_day"])
+        .groupby(["category", "platform", attr_key, "observed_day"])["product_id"]
         .nunique()
         .rename("product_count")
         .reset_index()
-        .merge(totals, on=["category", "platform", "observed_week"], how="left")
+        .merge(totals, on=["category", "platform", "observed_day"], how="left")
     )
-    if weekly.empty:
+    if daily.empty:
         return {}
 
-    weekly["share"] = weekly["product_count"] / weekly["total_products"].clip(lower=1)
+    daily["share"] = daily["product_count"] / daily["total_products"].clip(lower=1)
     out: dict[tuple, dict] = {}
 
-    for key, group in weekly.groupby(["category", "platform", attr_key]):
-        group = group.sort_values("observed_week")
-        weeks = sorted(
+    for key, group in daily.groupby(["category", "platform", attr_key]):
+        group = group.sort_values("observed_day")
+        days = sorted(
             totals[
                 (totals["category"] == key[0]) &
                 (totals["platform"] == key[1])
-            ]["observed_week"].dropna().unique()
+            ]["observed_day"].dropna().unique()
         )
-        if len(weeks) < 2:
+        if len(days) < 2:
             # A single scrape is a baseline rather than a lifecycle curve.
-            # Let current momentum classify the action until weekly history exists.
+            # Let current momentum classify the action until daily history exists.
             continue
         series = (
-            group.set_index("observed_week")["share"]
-            .reindex(weeks, fill_value=0.0)
+            group.set_index("observed_day")["share"]
+            .reindex(days, fill_value=0.0)
             .astype(float)
         )
-        if len(weeks) < 3:
-            out[(key[0], key[1], attr_key, str(key[2]))] = _two_week_lifecycle(series)
+        if len(days) < 3:
+            out[(key[0], key[1], attr_key, str(key[2]))] = _two_day_lifecycle(series)
         else:
             out[(key[0], key[1], attr_key, str(key[2]))] = _classify_lifecycle(series)
 
@@ -189,7 +183,7 @@ def _snapshot_lifecycle(direction: str, momentum: float, new_product_share: floa
         "lifecycle_stage":       stage,
         "retailer_action":       RETAIL_ACTIONS[stage],
         "lifecycle_explanation": (
-            "Snapshot baseline from scraped_at: fewer than 3 weekly scrape points are available, "
+            "Snapshot baseline from scraped_at: fewer than 3 daily scrape points are available, "
             "so stage is inferred from current momentum, rating, review, and share signals."
         ),
         "weeks_observed":        1,
@@ -198,7 +192,7 @@ def _snapshot_lifecycle(direction: str, momentum: float, new_product_share: floa
     }
 
 
-def _two_week_lifecycle(series: pd.Series) -> dict:
+def _two_day_lifecycle(series: pd.Series) -> dict:
     latest = float(series.iloc[-1])
     previous = float(series.iloc[-2])
     growth = latest - previous
@@ -218,8 +212,8 @@ def _two_week_lifecycle(series: pd.Series) -> dict:
         "lifecycle_stage":       stage,
         "retailer_action":       RETAIL_ACTIONS[stage],
         "lifecycle_explanation": (
-            f"Two-week comparison from scraped_at: current scrape week share is {latest:.1%} "
-            f"vs {previous:.1%} in the previous scrape week. Full lifecycle curve starts after 3 weeks."
+            f"Two-day comparison from scraped_at: current scrape day share is {latest:.1%} "
+            f"vs {previous:.1%} on the previous scrape day. Full lifecycle curve starts after 3 days."
         ),
         "weeks_observed":        int((series > 0).sum()),
         "latest_week_share":     round(latest, 4),
@@ -261,8 +255,8 @@ def _classify_lifecycle(series: pd.Series) -> dict:
             stage = "plateau"
 
     explanation = (
-        f"Current scrape week share is {latest:.1%} vs {previous:.1%} in the previous scrape week; "
-        f"historical peak is {peak:.1%} across {weeks_observed} active week(s)."
+        f"Current scrape day share is {latest:.1%} vs {previous:.1%} on the previous scrape day; "
+        f"historical peak is {peak:.1%} across {weeks_observed} active day(s)."
     )
     return {
         "lifecycle_stage":      stage,
@@ -288,7 +282,7 @@ def _compute_scores(df: pd.DataFrame) -> list[dict]:
     lifecycle_by_key: dict[tuple, dict] = {}
     for attr_key in ATTR_KEYS:
         if attr_key in df.columns:
-            lifecycle_by_key.update(_weekly_lifecycle(df, attr_key))
+            lifecycle_by_key.update(_daily_lifecycle(df, attr_key))
 
     for attr_key in ATTR_KEYS:
         if attr_key not in df.columns:

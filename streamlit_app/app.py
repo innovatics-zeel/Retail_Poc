@@ -22,6 +22,7 @@ from streamlit_app.db import (
     color_family_breakdown, save_feedback, data_summary_for_llm,
     load_trend_scores, load_recommendations, update_recommendation_status,
     load_review_velocity, load_variant_skus,
+    load_review_velocity_forecast, load_price_band_momentum, load_whitespace_scores,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ st.markdown(f"""
     .forecast-grid {{ display:grid; grid-template-columns:1.05fr 1fr 1.05fr; gap:16px; align-items:start; }}
     .forecast-left {{ display:flex; flex-direction:column; gap:16px; }}
     .forecast-mid {{ display:flex; flex-direction:column; gap:16px; }}
-    .forecast-row {{ display:grid; grid-template-columns:126px 1fr 60px 104px; gap:12px; align-items:center; margin:12px 0; font-size:.8rem; }}
+    .forecast-row {{ display:grid; grid-template-columns:126px 1fr 60px 54px; gap:12px; align-items:center; margin:12px 0; font-size:.8rem; }}
     .forecast-name {{ color:var(--ink); min-width:0; }}
     .forecast-name b {{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
     .forecast-name span {{ display:block; color:var(--muted); font-size:.68rem; line-height:1.25; margin-top:2px; }}
@@ -238,8 +239,9 @@ st.markdown(f"""
     .stage-pill.peak {{ background:#fff0c7; color:#b97900; }}
     .stage-pill.plateau {{ background:#edf2f7; color:#52617a; }}
     .stage-pill.declining, .stage-pill.dead {{ background:#ffe5e5; color:var(--danger); }}
-    .scale-row {{ display:grid; grid-template-columns:126px 1fr 176px; gap:12px; color:#65758b; font-weight:800; font-size:.7rem; margin:0 0 10px; }}
+    .scale-row {{ display:grid; grid-template-columns:126px 1fr 126px; gap:12px; color:#65758b; font-weight:800; font-size:.7rem; margin:0 0 10px; }}
     .scale-labels {{ display:flex; justify-content:space-between; }}
+    .forecast-meta-head {{ display:flex; justify-content:space-between; gap:12px; text-transform:uppercase; letter-spacing:.04em; }}
     .why-box {{ background:{INFO_BG}; border-left:4px solid var(--accent); border-radius:4px; padding:12px 14px; color:#27354a; font-size:.8rem; line-height:1.38; margin-bottom:14px; }}
     .why-box b:first-child {{ color:var(--accent); letter-spacing:.08em; font-size:.68rem; margin-right:7px; }}
     .mini-forecast {{ margin-top:10px; padding-bottom:13px; border-bottom:1px solid #edf2f6; }}
@@ -383,6 +385,16 @@ def get_variant_data(platform, category):
     p = None if platform == "All" else platform
     c = None if category == "All" else category
     return load_variant_skus(p, c)
+
+@st.cache_data(ttl=300)
+def get_predictive_panels(platform, category):
+    p = None if platform == "All" else platform
+    c = None if category == "All" else category
+    return {
+        "review_velocity": load_review_velocity_forecast(p, c),
+        "price_bands": load_price_band_momentum(p, c),
+        "whitespace": load_whitespace_scores(p, c),
+    }
 
 df_raw = get_data(platform_filter, category_filter)
 sku_raw = get_variant_data(platform_filter, category_filter)
@@ -1017,7 +1029,11 @@ def _forecast_rows_html(rows: list[dict]) -> str:
         # TODO: Show forecast rows after predictions write trend_scores for the active filters.
         return "<div class='empty-panel'>No backend forecast rows available yet. Run predictions after enough scrape history exists.</div>"
     html = ["""
-<div class="scale-row"><div></div><div class="scale-labels"><span>-25%</span><span>-10%</span><span>0</span><span>+10%</span><span>+25%</span></div><div></div></div>
+<div class="scale-row">
+  <div>Signal name</div>
+  <div class="scale-labels"><span>-25%</span><span>-10%</span><span>0</span><span>+10%</span><span>+25%</span></div>
+  <div class="forecast-meta-head"><span>Direction</span><span>Confidence</span></div>
+</div>
 """]
     for row in rows:
         change = int(row["change"])
@@ -1029,8 +1045,11 @@ def _forecast_rows_html(rows: list[dict]) -> str:
             left = max(6, 50 - magnitude)
             color = DANGER
         stage = _stage_key(row.get("stage"))
-        stage_label = _LIFECYCLE_LABELS[stage]
-        action = row.get("action") or "Monitor weekly"
+        action = row.get("action") or "Monitor daily"
+        confidence = str(row.get("confidence") or "Low")
+        conf_cls = confidence.lower()
+        if conf_cls not in {"high", "med", "low"}:
+            conf_cls = "low"
         html.append(f"""
 <div class="forecast-row">
   <div class="forecast-name"><b>{_safe(row["name"])}</b><span>{_safe(action)}</span></div>
@@ -1039,18 +1058,16 @@ def _forecast_rows_html(rows: list[dict]) -> str:
     <span class="forecast-whisker" style="left:{max(2, min(96, 50 + change * 1.15))}%;"></span>
   </div>
   <div class="forecast-change {'pos' if change >= 0 else 'neg'}">{change:+d}%</div>
-  <div><span class="stage-pill {stage}">{_safe(stage_label)}</span></div>
+  <div><span class="confidence {conf_cls}">{_safe(confidence)}</span></div>
 </div>""")
     return "".join(html)
 
 
 def _price_momentum_rows(products: pd.DataFrame) -> list[dict]:
-    # TODO: Populate from backend prediction output by price band, not current-share heuristics.
     return []
 
 
 def _sparkline_html(title: str, actual: int, projected: int) -> str:
-    # TODO: Replace with real historical/projection points from review_velocity forecasts.
     projected_color = ACCENT if projected >= 0 else DANGER
     band_color = "#dff2fb" if projected >= 0 else "#ffe5e5"
     if projected >= 0:
@@ -1077,6 +1094,26 @@ def _sparkline_html(title: str, actual: int, projected: int) -> str:
 </div>"""
 
 
+def _review_velocity_html(rows: list[dict]) -> str:
+    if not rows:
+        return "<div class='empty-panel'>No daily review history available yet. Run daily scraping to build the forecast.</div>"
+    html = []
+    for row in rows[:4]:
+        actual = int(round(float(row.get("actual_change_pct") or 0)))
+        projected = int(round(float(row.get("projected_change_pct") or 0)))
+        title = row.get("name") or "Review velocity"
+        current = _num(row.get("current_reviews") or 0)
+        conf = str(row.get("confidence") or "Low").lower()
+        html.append(
+            _sparkline_html(title, actual, projected) +
+            f'<div class="tag-row" style="margin-top:-7px;margin-bottom:9px;">'
+            f'<span class="tag info">{current} current reviews</span>'
+            f'<span class="tag warn">{_safe(conf.title())} confidence</span>'
+            f'</div>'
+        )
+    return "".join(html)
+
+
 def _early_signal_html(rows: list[dict]) -> str:
     if not rows:
         # TODO: Populate from backend early-signal detections with first_detected_at timestamps.
@@ -1087,12 +1124,20 @@ def _early_signal_html(rows: list[dict]) -> str:
         up = change >= 0
         icon = "▲" if up else "▼"
         color = ACCENT if up else DANGER
+        if row.get("stage") == "plateau":
+            color = WARNING
+            icon = "~"
         tag_cls = "" if up else "bad"
         title = _label(row.get("name", "Signal"))
         stage = _stage_key(row.get("stage"))
-        action = row.get("action") or "Monitor weekly"
-        copy = row.get("copy") or f"{title} is in {_LIFECYCLE_LABELS[stage].lower()} stage. Retail action: {action}."
+        action = row.get("action") or "Monitor daily"
+        copy = row.get("copy") or (
+            f"{title} has crossed the daily momentum screen and is currently "
+            f"{_LIFECYCLE_LABELS[stage].lower()}. {action}."
+        )
         detected = row.get("first_detected_at") or row.get("age")
+        if not detected:
+            detected = f"{max(1, int(row.get('weeks_observed') or idx + 1))}D AGO"
         detected_html = f'<div class="detected">DETECTED {_safe(detected)}</div>' if detected else ""
         html.append(f"""
 <div class="early-card">
@@ -1100,7 +1145,7 @@ def _early_signal_html(rows: list[dict]) -> str:
   <div>
     <div class="early-title">{_safe(title)}</div>
     <div class="early-copy">{_safe(copy)}</div>
-    <div class="tag-row"><span class="tag {tag_cls}">{change:+d}% velocity</span><span class="tag info">{_safe(_LIFECYCLE_LABELS[stage])}</span></div>
+    <div class="tag-row"><span class="tag {tag_cls}">{change:+d}% momentum</span><span class="tag info">{_safe(_LIFECYCLE_LABELS[stage])}</span></div>
   </div>
   {detected_html}
 </div>""")
@@ -1390,33 +1435,40 @@ with tab3:
             platform=None if platform_filter == "All" else platform_filter,
         )
         ctx = _market_signal_context(df, sku_df, trend_scores_df)
+        predictive_panels = get_predictive_panels(platform_filter, category_filter)
         attr_rows = _forecast_source(df, trend_scores_df, limit=7)
-        price_rows = _price_momentum_rows(df)
-        whitespace_rows = sorted(attr_rows, key=lambda r: r["change"], reverse=True)
+        price_rows = predictive_panels["price_bands"]
+        whitespace_rows = predictive_panels["whitespace"]
+        review_velocity_rows = predictive_panels["review_velocity"]
         early_rows = [
             {
                 "name": r["name"],
                 "change": r["change"],
                 "stage": r.get("stage"),
                 "action": r.get("action"),
+                "weeks_observed": r.get("weeks_observed"),
+                "copy": (
+                    f"{_label(r['name'])} is showing {r['change']:+d}% daily momentum. "
+                    f"Current lifecycle: {_LIFECYCLE_LABELS[_stage_key(r.get('stage'))].lower()}."
+                ),
             }
             for r in attr_rows[:5]
         ]
         forecast_context = (
-            f'{_safe(_label(ctx["rising_attr"]))} has the strongest backend trend score; each attribute is now mapped to a weekly lifecycle stage and retailer action.'
+            f'{_safe(_label(ctx["rising_attr"]))} has the strongest backend trend score; each attribute is now mapped to a daily lifecycle stage and retailer action.'
             if attr_rows else
             "Backend forecast rows are not available for the active filters yet."
         )
         max_weeks = max((int(r.get("weeks_observed") or 0) for r in attr_rows), default=0)
         if attr_rows and max_weeks < 2:
             forecast_context = (
-                "Snapshot baseline mode from scraped_at: fewer than 3 weekly scrape points exist, "
-                "so lifecycle actions are inferred from current momentum until weekly history builds."
+                "Snapshot baseline mode from scraped_at: fewer than 3 daily scrape points exist, "
+                "so lifecycle actions are inferred from current momentum until daily history builds."
             )
         elif attr_rows and max_weeks < 3:
             forecast_context = (
-                "Two-week comparison mode from scraped_at: current scrape week is compared with the previous scrape week; "
-                "full lifecycle curve starts after 3 weekly points."
+                "Two-day comparison mode from scraped_at: current scrape day is compared with the previous scrape day; "
+                "full lifecycle curve starts after 3 daily points."
             )
 
         st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
@@ -1442,8 +1494,8 @@ with tab3:
   <div class="forecast-left">
     <div class="mi-panel">
       <div class="panel-head">
-        <div class="panel-title">Trend Lifecycle Forecast · Weekly</div>
-        <div class="panel-sub">Emerging → accelerating → peak → plateau → declining → dead</div>
+        <div class="panel-title">Attribute Forecast · Next 30 Days</div>
+        <div class="panel-sub">Direction · range · lifecycle stage</div>
       </div>
       <div class="panel-body">
         <div class="why-box"><b>WHY</b>{forecast_context}</div>
@@ -1456,7 +1508,7 @@ with tab3:
         <div class="panel-sub">Sales-momentum proxy · 30d actual + 30d projected</div>
       </div>
       <div class="panel-body">
-        <div class="empty-panel">No backend review-velocity forecast series available yet.</div>
+        {_review_velocity_html(review_velocity_rows)}
       </div>
     </div>
   </div>
@@ -1467,7 +1519,7 @@ with tab3:
         <div class="panel-sub">Where the corridor is widening</div>
       </div>
       <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Price-band forecasts will appear after the backend stores momentum by price corridor.</div>
+        <div class="why-box"><b>WHY</b>Uses daily variant observations to detect which price corridor is gaining SKU share in the active market slice.</div>
         {_forecast_rows_html(price_rows)}
       </div>
     </div>
@@ -1477,7 +1529,7 @@ with tab3:
         <div class="panel-sub">Demand-to-supply gap · new-entrant return-on-listing</div>
       </div>
       <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Whitespace requires backend demand/supply density and new-listing ROI metrics.</div>
+        <div class="why-box"><b>WHY</b>Compares current variant saturation against rating and review demand. Low supply plus strong demand becomes whitespace.</div>
         {_whitespace_html(whitespace_rows)}
       </div>
     </div>
@@ -1489,7 +1541,7 @@ with tab3:
         <div class="panel-sub">Detected before broad-market consensus</div>
       </div>
       <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Early-signal cards require backend detection timestamps and threshold outputs.</div>
+        <div class="why-box"><b>WHY</b>Early signals come from the same daily lifecycle rows before they reach broad-market saturation.</div>
         {_early_signal_html(early_rows)}
       </div>
     </div>

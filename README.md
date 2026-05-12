@@ -18,7 +18,7 @@ of business intelligence through a Streamlit dashboard powered by Claude AI.
 |---|---|
 | **Descriptive** | KPI cards, price/rating histograms, attribute breakdowns, platform comparison |
 | **Conversational** | Natural-language Q&A over live product data via Claude API |
-| **Predictive** | 4-week trend forecasts for price, demand signals, and top attributes |
+| **Predictive** | Daily trend forecasts for price, demand signals, and top attributes |
 | **Recommendations** | AI-generated ranked buying/sourcing recommendations with accept/modify/dismiss feedback loop |
 
 ---
@@ -32,7 +32,7 @@ retail/
 ├── .env.example                 ← template — commit this
 ├── requirements.txt
 ├── scrape_runner.py             ← run to trigger scrapers manually
-├── scheduler.py                 ← APScheduler — weekly cron every Sunday 02:00 ET
+├── scheduler.py                 ← APScheduler — daily cron at 02:00 ET
 │
 ├── config/
 │   └── settings.py              ← all env vars loaded from .env
@@ -203,13 +203,13 @@ python scrape_runner.py
 streamlit run streamlit_app/app.py
 ```
 
-### 7. Start the weekly scheduler (optional, background process)
+### 7. Start the daily scheduler (optional, background process)
 
 ```bash
 python scheduler.py
 ```
 
-Runs every Sunday at 02:00 AM ET. Safe to run as a `systemd` service or Docker container.
+Runs every day at 02:00 AM ET. Safe to run as a `systemd` service or Docker container.
 
 ---
 
@@ -240,7 +240,7 @@ GROUP BY action;
 ## Known Limitations (POC Scope)
 
 - **Single IP / no proxy rotation** — suitable for low-volume demos; production would need rotating residential proxies
-- **Synthetic historical data** — the Predictive tab generates 13 weeks of synthetic history with NumPy until multiple real scrape runs have accumulated
+- **Limited historical data at first** — daily lifecycle signals become stronger after multiple real scrape days have accumulated
 - **No authentication** — Streamlit app is unauthenticated; add `streamlit-authenticator` for multi-user deployments
 - **Local PostgreSQL only** — production path is RDS or Cloud SQL with connection pooling (PgBouncer)
 - **Claude API costs** — Conversational and Recommendations tabs call Claude on every interaction; add `st.cache_data` TTLs or a prompt cache layer for cost control at scale

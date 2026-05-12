@@ -409,25 +409,360 @@ def update_recommendation_status(rec_id: int, status: str,
 
 
 def load_review_velocity() -> list[dict]:
-    """Return category-platform weekly review time series for Tab 3 chart."""
+    """Return category-platform daily review time series for Tab 3 chart."""
     db = _session()
     try:
         rows = db.execute(text("""
             SELECT
                 cat.name                               AS category,
                 pl.name                                AS platform,
-                DATE_TRUNC('week', r.scraped_at)::date AS week,
+                DATE_TRUNC('day', r.scraped_at)::date  AS day,
                 SUM(r.review_count)                    AS total_reviews
             FROM reviews r
             JOIN products p     ON p.product_id    = r.product_id
             JOIN categories cat ON cat.category_id = p.category_id
             JOIN platforms  pl  ON pl.id           = p.platform_id
-            GROUP BY cat.name, pl.name, DATE_TRUNC('week', r.scraped_at)
-            ORDER BY cat.name, pl.name, week
+            GROUP BY cat.name, pl.name, DATE_TRUNC('day', r.scraped_at)
+            ORDER BY cat.name, pl.name, day
         """)).mappings().fetchall()
         return [dict(r) for r in rows]
     finally:
         db.close()
+
+
+def _scope_where(platform: str = None, category: str = None, alias: str = "pl") -> tuple[str, dict]:
+    conditions, params = [], {}
+    if platform and platform != "All":
+        conditions.append(f"{alias}.name = :platform")
+        params["platform"] = platform
+    if category and category != "All":
+        conditions.append("cat.name = :category")
+        params["category"] = category
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where, params
+
+
+def _pct_change(current: float, previous: float) -> float:
+    if previous is None or previous <= 0:
+        return 0.0 if current <= 0 else 100.0
+    return round((current - previous) / previous * 100, 1)
+
+
+def _linear_forecast(values: list[float], periods: int = 7) -> tuple[list[float], float]:
+    if not values:
+        return [], 0.0
+    current = float(values[-1])
+    if len(values) < 2:
+        return [current] * periods, 0.0
+    slope = (float(values[-1]) - float(values[0])) / max(len(values) - 1, 1)
+    forecast = [max(0.0, current + slope * (i + 1)) for i in range(periods)]
+    return forecast, round(slope, 2)
+
+
+def _confidence(points: int, magnitude: float) -> str:
+    if points >= 5 and abs(magnitude) >= 8:
+        return "High"
+    if points >= 3 or abs(magnitude) >= 8:
+        return "Med"
+    return "Low"
+
+
+def _finite_float(value, default: float = 0.0) -> float:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return default
+    return value if pd.notna(value) else default
+
+
+def load_review_velocity_forecast(platform: str = None, category: str = None) -> list[dict]:
+    """Daily review velocity forecast for the active filter."""
+    where, params = _scope_where(platform, category)
+    db = _session()
+    try:
+        rows = db.execute(text(f"""
+            SELECT
+                r.product_id,
+                DATE_TRUNC('day', r.scraped_at)::date AS day,
+                MAX(r.review_count)                   AS review_count,
+                cat.name                              AS category,
+                pl.name                               AS platform
+            FROM reviews r
+            JOIN products p      ON p.product_id    = r.product_id
+            JOIN categories cat  ON cat.category_id = p.category_id
+            JOIN platforms pl    ON pl.id           = p.platform_id
+            {where}
+            GROUP BY r.product_id, DATE_TRUNC('day', r.scraped_at), cat.name, pl.name
+            ORDER BY cat.name, pl.name, day
+        """), params).mappings().fetchall()
+    finally:
+        db.close()
+
+    if not rows:
+        return []
+
+    df = pd.DataFrame([dict(r) for r in rows])
+    df["day"] = pd.to_datetime(df["day"], errors="coerce")
+    df["review_count"] = pd.to_numeric(df["review_count"], errors="coerce").fillna(0)
+
+    out = []
+    for (cat, plat), grp in df.groupby(["category", "platform"]):
+        daily = grp.groupby("day")["review_count"].sum().sort_index()
+        if daily.empty:
+            continue
+        hist_vals = [float(v) for v in daily.tail(14).values]
+        forecast, slope = _linear_forecast(hist_vals, 30)
+        current = hist_vals[-1]
+        previous = hist_vals[-2] if len(hist_vals) >= 2 else current
+        actual_pct = _pct_change(current, previous)
+        projected_pct = _pct_change(forecast[-1] if forecast else current, current)
+        out.append({
+            "category": str(cat),
+            "platform": str(plat),
+            "name": f"{str(plat).title()} · {str(cat).replace('_', ' ').title()}",
+            "current_reviews": int(current),
+            "actual_change_pct": actual_pct,
+            "projected_change_pct": projected_pct,
+            "slope": slope,
+            "hist_days": [str(d.date()) for d in daily.tail(14).index],
+            "hist_vals": hist_vals,
+            "future_vals": [round(v, 1) for v in forecast],
+            "confidence": _confidence(len(hist_vals), projected_pct),
+        })
+    return sorted(out, key=lambda r: r["projected_change_pct"], reverse=True)
+
+
+def _band_edges_for_prices(prices: pd.Series) -> list[tuple[str, float | None]]:
+    clean = pd.to_numeric(prices, errors="coerce").dropna()
+    median = float(clean.median()) if not clean.empty else 40.0
+    if median >= 75:
+        return [("<$50", 50), ("$50-100", 100), ("$100-150", 150),
+                ("$150-250", 250), ("$250-400", 400), (">$400", None)]
+    return [("<$20", 20), ("$20-24", 24), ("$24-32", 32),
+            ("$32-45", 45), ("$45-60", 60), (">$60", None)]
+
+
+def _band_label(price, bands: list[tuple[str, float | None]]) -> str:
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return "Unknown"
+    for label, upper in bands:
+        if upper is None or price < upper:
+            return label
+    return bands[-1][0]
+
+
+def _variant_history(platform: str = None, category: str = None) -> pd.DataFrame:
+    where, params = _scope_where(platform, category)
+    db = _session()
+    try:
+        rows = db.execute(text(f"""
+            SELECT
+                pv.variant_id,
+                pv.product_id,
+                pv.color_id,
+                pv.size_id,
+                pv.price,
+                pv.is_available,
+                pv.scraped_at AS observed_at,
+                DATE_TRUNC('day', pv.scraped_at)::date AS day,
+                cat.name AS category,
+                pl.name AS platform,
+                c.color_family,
+                c.name AS color,
+                s.label AS size,
+                COALESCE(mat.name, p.material) AS material,
+                COALESCE(ft.name, p.fit) AS fit,
+                COALESCE(nt.name, p.neck_type) AS neck_type,
+                COALESCE(st.name, p.sleeve_type) AS sleeve_type,
+                COALESCE(pat.name, p.pattern) AS pattern,
+                r.rating_avg AS rating,
+                r.review_count
+            FROM product_variants pv
+            JOIN products p      ON p.product_id    = pv.product_id
+            JOIN platforms pl    ON pl.id           = p.platform_id
+            LEFT JOIN categories cat ON cat.category_id = p.category_id
+            LEFT JOIN colors c       ON c.color_id      = pv.color_id
+            LEFT JOIN sizes s        ON s.size_id       = pv.size_id
+            LEFT JOIN materials mat  ON mat.material_id = pv.material_id
+            LEFT JOIN fits ft        ON ft.fit_id       = pv.fit_id
+            LEFT JOIN neck_types nt  ON nt.neck_type_id = pv.neck_type_id
+            LEFT JOIN sleeve_types st ON st.sleeve_type_id = pv.sleeve_type_id
+            LEFT JOIN patterns pat   ON pat.pattern_id  = pv.pattern_id
+            LEFT JOIN LATERAL (
+                SELECT rating_avg, review_count
+                FROM reviews
+                WHERE product_id = p.product_id
+                  AND scraped_at <= pv.scraped_at + INTERVAL '1 day'
+                ORDER BY scraped_at DESC
+                LIMIT 1
+            ) r ON TRUE
+            {where}
+            ORDER BY pv.scraped_at, pv.variant_id
+        """), params).mappings().fetchall()
+    finally:
+        db.close()
+
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df["day"] = pd.to_datetime(df["day"], errors="coerce")
+    df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+    for col in ("price", "rating", "review_count"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.sort_values(["observed_at", "variant_id"])
+    return df.drop_duplicates(
+        subset=["product_id", "color_id", "size_id", "day"],
+        keep="last",
+    )
+
+
+def load_price_band_momentum(platform: str = None, category: str = None) -> list[dict]:
+    """Daily price-band momentum based on variant observations."""
+    df = _variant_history(platform, category)
+    if df.empty or "price" not in df.columns:
+        return []
+    df = df.dropna(subset=["price", "day"]).copy()
+    if df.empty:
+        return []
+
+    out = []
+    for (cat, plat), scope in df.groupby(["category", "platform"]):
+        bands = _band_edges_for_prices(scope["price"])
+        band_order = [b[0] for b in bands]
+        scope = scope.copy()
+        scope["band"] = scope["price"].apply(lambda p: _band_label(p, bands))
+
+        totals = scope.groupby("day")["variant_id"].nunique().sort_index()
+        daily = (
+            scope.groupby(["day", "band"])
+            .agg(
+                variant_count=("variant_id", "nunique"),
+                avg_price=("price", "mean"),
+                avg_rating=("rating", "mean"),
+                review_count=("review_count", "sum"),
+            )
+            .reset_index()
+        )
+
+        for band in band_order:
+            grp = daily[daily["band"] == band].set_index("day").sort_index()
+            if grp.empty:
+                continue
+            shares = (grp["variant_count"] / totals.reindex(grp.index).fillna(1).clip(lower=1)).fillna(0)
+            latest_share = float(shares.iloc[-1])
+            previous_share = float(shares.iloc[-2]) if len(shares) >= 2 else latest_share
+            change = round((latest_share - previous_share) * 100, 1)
+            forecast, slope = _linear_forecast([float(v) for v in shares.tail(14).values], 30)
+            projected_change = round(((forecast[-1] if forecast else latest_share) - latest_share) * 100, 1)
+            momentum = change if abs(change) >= abs(projected_change) else projected_change
+            stage = "accelerating" if momentum >= 3 else "declining" if momentum <= -3 else "plateau"
+            action = (
+                "Expand buy depth in this price corridor"
+                if stage == "accelerating" else
+                "Reduce exposure or markdown test"
+                if stage == "declining" else
+                "Maintain and monitor daily"
+            )
+            out.append({
+                "category": str(cat),
+                "platform": str(plat),
+                "name": band,
+                "change": int(round(momentum)),
+                "stage": stage,
+                "action": action,
+                "confidence": _confidence(len(shares), momentum),
+                "latest_share": round(latest_share, 4),
+                "previous_share": round(previous_share, 4),
+                "avg_price": round(_finite_float(grp["avg_price"].iloc[-1]), 2),
+                "review_count": int(grp["review_count"].fillna(0).iloc[-1]),
+            })
+    return sorted(out, key=lambda r: r["change"], reverse=True)
+
+
+def load_whitespace_scores(platform: str = None, category: str = None) -> list[dict]:
+    """Find high-demand, low-saturation attribute pockets from latest variant data."""
+    df = _variant_history(platform, category)
+    if df.empty:
+        return []
+    latest_day = df["day"].dropna().max()
+    if pd.isna(latest_day):
+        return []
+    current = df[df["day"] == latest_day].copy()
+    previous_day = df[df["day"] < latest_day]["day"].dropna().max()
+    previous = df[df["day"] == previous_day].copy() if pd.notna(previous_day) else pd.DataFrame()
+
+    attrs = ["color_family", "material", "fit", "pattern", "neck_type", "sleeve_type"]
+    out = []
+    total_variants = max(current["variant_id"].nunique(), 1)
+    avg_reviews = _finite_float(current["review_count"].fillna(0).mean())
+    avg_rating = _finite_float(current["rating"].dropna().mean())
+
+    for attr in attrs:
+        if attr not in current.columns:
+            continue
+        work = current.dropna(subset=[attr]).copy()
+        if work.empty:
+            continue
+        work[attr] = work[attr].astype(str).str.split(r",\s*")
+        work = work.explode(attr)
+        work[attr] = work[attr].astype(str).str.strip()
+        work = work[(work[attr] != "") & (work[attr].str.lower() != "nan")]
+        if work.empty:
+            continue
+
+        prev_counts = pd.Series(dtype=float)
+        if not previous.empty and attr in previous.columns:
+            prev_work = previous.dropna(subset=[attr]).copy()
+            prev_work[attr] = prev_work[attr].astype(str).str.split(r",\s*")
+            prev_work = prev_work.explode(attr)
+            prev_work[attr] = prev_work[attr].astype(str).str.strip()
+            prev_total = max(prev_work["variant_id"].nunique(), 1)
+            prev_counts = prev_work.groupby(attr)["variant_id"].nunique() / prev_total
+
+        grouped = (
+            work.groupby(attr)
+            .agg(
+                variant_count=("variant_id", "nunique"),
+                product_count=("product_id", "nunique"),
+                avg_rating=("rating", "mean"),
+                avg_reviews=("review_count", "mean"),
+            )
+            .reset_index()
+        )
+        for _, row in grouped.iterrows():
+            name = str(row[attr])
+            share = float(row["variant_count"]) / total_variants
+            prev_share = float(prev_counts.get(name, share)) if not prev_counts.empty else share
+            change = round((share - prev_share) * 100, 1)
+            row_rating = _finite_float(row["avg_rating"], avg_rating)
+            row_reviews = _finite_float(row["avg_reviews"])
+            rating_score = max(0.0, (row_rating - max(avg_rating, 1)) / 1.5)
+            review_score = (row_reviews / max(avg_reviews, 1)) - 1
+            demand = max(0.0, min(1.0, 0.55 + rating_score * 0.25 + review_score * 0.20))
+            saturation = int(round(share * 100))
+            whitespace = demand * (1 - min(share, 0.95))
+            rol = max(0.1, whitespace * 4)
+            if float(row["variant_count"]) < 1:
+                continue
+            out.append({
+                "attr_key": attr,
+                "name": name,
+                "change": int(round(change)),
+                "saturation": saturation,
+                "new_listing_rol": round(rol, 1),
+                "demand_score": round(demand, 3),
+                "variant_count": int(row["variant_count"]),
+                "avg_rating": round(row_rating, 2),
+                "avg_reviews": round(row_reviews, 1),
+            })
+
+    return sorted(
+        out,
+        key=lambda r: (r["new_listing_rol"], -r["saturation"], r["change"]),
+        reverse=True,
+    )
 
 
 def data_summary_for_llm(df: pd.DataFrame) -> str:
