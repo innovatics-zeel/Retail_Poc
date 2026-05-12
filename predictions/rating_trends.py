@@ -1,7 +1,8 @@
 """
 rating_trends.py — Linear rating trend per (category, platform, attr_key, attr_value).
 
-Uses scipy.stats.linregress when available, falls back to numpy.polyfit.
+Uses review snapshots. scipy.stats.linregress is used when available,
+falling back to numpy.polyfit.
 With a single scrape snapshot all slopes will be 0; the rating delta vs the
 category average is still informative.
 """
@@ -30,7 +31,7 @@ SELECT
     COALESCE(nt.name, p.neck_type)       AS neck_type,
     COALESCE(st.name, p.sleeve_type)     AS sleeve_type,
     c.color_family
-FROM reviews r
+FROM product_review_snapshots r
 JOIN products p     ON p.product_id    = r.product_id
 JOIN categories cat ON cat.category_id = p.category_id
 JOIN platforms  pl  ON pl.id           = p.platform_id

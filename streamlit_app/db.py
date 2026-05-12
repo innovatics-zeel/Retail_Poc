@@ -418,7 +418,7 @@ def load_review_velocity() -> list[dict]:
                 pl.name                                AS platform,
                 DATE_TRUNC('day', r.scraped_at)::date  AS day,
                 SUM(r.review_count)                    AS total_reviews
-            FROM reviews r
+            FROM product_review_snapshots r
             JOIN products p     ON p.product_id    = r.product_id
             JOIN categories cat ON cat.category_id = p.category_id
             JOIN platforms  pl  ON pl.id           = p.platform_id
@@ -487,7 +487,7 @@ def load_review_velocity_forecast(platform: str = None, category: str = None) ->
                 MAX(r.review_count)                   AS review_count,
                 cat.name                              AS category,
                 pl.name                               AS platform
-            FROM reviews r
+            FROM product_review_snapshots r
             JOIN products p      ON p.product_id    = r.product_id
             JOIN categories cat  ON cat.category_id = p.category_id
             JOIN platforms pl    ON pl.id           = p.platform_id
@@ -563,10 +563,10 @@ def _variant_history(platform: str = None, category: str = None) -> pd.DataFrame
                 pv.product_id,
                 pv.color_id,
                 pv.size_id,
-                pv.price,
-                pv.is_available,
-                pv.scraped_at AS observed_at,
-                DATE_TRUNC('day', pv.scraped_at)::date AS day,
+                vs.price,
+                vs.is_available,
+                vs.scraped_at AS observed_at,
+                DATE_TRUNC('day', vs.scraped_at)::date AS day,
                 cat.name AS category,
                 pl.name AS platform,
                 c.color_family,
@@ -579,7 +579,8 @@ def _variant_history(platform: str = None, category: str = None) -> pd.DataFrame
                 COALESCE(pat.name, p.pattern) AS pattern,
                 r.rating_avg AS rating,
                 r.review_count
-            FROM product_variants pv
+            FROM variant_snapshots vs
+            JOIN product_variants pv ON pv.variant_id = vs.variant_id
             JOIN products p      ON p.product_id    = pv.product_id
             JOIN platforms pl    ON pl.id           = p.platform_id
             LEFT JOIN categories cat ON cat.category_id = p.category_id
@@ -592,14 +593,14 @@ def _variant_history(platform: str = None, category: str = None) -> pd.DataFrame
             LEFT JOIN patterns pat   ON pat.pattern_id  = pv.pattern_id
             LEFT JOIN LATERAL (
                 SELECT rating_avg, review_count
-                FROM reviews
+                FROM product_review_snapshots
                 WHERE product_id = p.product_id
-                  AND scraped_at <= pv.scraped_at + INTERVAL '1 day'
+                  AND scraped_at <= vs.scraped_at + INTERVAL '1 day'
                 ORDER BY scraped_at DESC
                 LIMIT 1
             ) r ON TRUE
             {where}
-            ORDER BY pv.scraped_at, pv.variant_id
+            ORDER BY vs.scraped_at, pv.variant_id
         """), params).mappings().fetchall()
     finally:
         db.close()

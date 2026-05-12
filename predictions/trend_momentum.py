@@ -44,7 +44,7 @@ SELECT
     COALESCE(nt.name, p.neck_type)       AS neck_type,
     COALESCE(st.name, p.sleeve_type)     AS sleeve_type,
     COALESCE(ft.name, p.fit)             AS fit,
-    COALESCE(pv.scraped_at, p.scraped_at) AS observed_at,
+    COALESCE(vs.scraped_at, pv.scraped_at, p.scraped_at) AS observed_at,
     pl.name          AS platform,
     cat.name         AS category,
     r.rating_avg     AS rating,
@@ -55,10 +55,11 @@ JOIN platforms pl        ON pl.id           = p.platform_id
 JOIN categories cat      ON cat.category_id = p.category_id
 LEFT JOIN LATERAL (
     SELECT rating_avg, review_count
-    FROM reviews WHERE product_id = p.product_id
+    FROM product_review_snapshots WHERE product_id = p.product_id
     ORDER BY scraped_at DESC LIMIT 1
 ) r ON TRUE
 LEFT JOIN product_variants pv ON pv.product_id = p.product_id
+LEFT JOIN variant_snapshots vs ON vs.variant_id = pv.variant_id
 LEFT JOIN colors c            ON c.color_id    = pv.color_id
 LEFT JOIN materials mat       ON mat.material_id   = pv.material_id
 LEFT JOIN neck_types nt       ON nt.neck_type_id   = pv.neck_type_id

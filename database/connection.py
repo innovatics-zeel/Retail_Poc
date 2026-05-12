@@ -69,6 +69,7 @@ _MIGRATION_TABLE = {
     "010_create_products.sql":                 "products",
     "013_create_platform_tables.sql":          "nordstrom",
     "014_create_normalized_schema.sql":        "product_variants",
+    "023_create_variant_review_snapshots.sql": "variant_snapshots",
 }
 
 _PLATFORM_COLS = {
@@ -96,10 +97,19 @@ _NORMALIZED_TABLES = {
     "product_variants": {"variant_id", "product_id", "color_id", "size_id",
                          "material_id", "neck_type_id", "sleeve_type_id",
                          "fit_id", "pattern_id",
-                         "is_available", "price", "currency", "image", "image_url",
+                         "is_available", "price", "original_price", "discount_pct",
+                         "currency", "image", "image_url", "low_stock", "stock_note",
                          "created_at", "scraped_at"},
     "reviews":          {"review_id", "product_id", "rating_avg", "review_count",
-                         "comment_json", "created_at", "scraped_at"},
+                         "fit_feedback", "stars_1_pct", "stars_2_pct", "stars_3_pct",
+                         "stars_4_pct", "stars_5_pct", "pros", "cons", "comment_json",
+                         "created_at", "scraped_at"},
+    "variant_snapshots": {"id", "variant_id", "price", "original_price", "discount_pct",
+                          "is_available", "low_stock", "stock_note", "scraped_at"},
+    "product_review_snapshots": {"id", "product_id", "rating_avg", "review_count",
+                                 "fit_feedback", "stars_1_pct", "stars_2_pct",
+                                 "stars_3_pct", "stars_4_pct", "stars_5_pct",
+                                 "scraped_at"},
 }
 
 _REQUIRED_SCHEMA = {

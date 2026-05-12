@@ -1,7 +1,7 @@
 """
 review_velocity.py — Review-count velocity forecasting per (category, platform).
 
-Groups reviews by (product_id, scrape day) → aggregates by (category, platform, day)
+Groups review snapshots by (product_id, scrape day) → aggregates by (category, platform, day)
 → linear regression → 7-day forecast with confidence interval.
 
 When only one day of data exists, the current count is returned as the flat forecast.
@@ -24,7 +24,7 @@ SELECT
     MAX(r.review_count)                    AS review_count,
     cat.name                               AS category,
     pl.name                                AS platform
-FROM reviews r
+FROM product_review_snapshots r
 JOIN products p   ON p.product_id   = r.product_id
 JOIN categories cat ON cat.category_id = p.category_id
 JOIN platforms  pl  ON pl.id           = p.platform_id

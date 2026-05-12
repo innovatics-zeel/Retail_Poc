@@ -18,6 +18,7 @@ from database.connection import SessionLocal
 from database.models import (
     Brand, Category, Color, Size, Material, NeckType, SleeveType, Fit, Pattern,
     Platform, Product, ProductVariant, Review,
+    VariantSnapshot, ProductReviewSnapshot,
 )
 
 MAX_REALISTIC_REVIEW_COUNT = 1_000_000
@@ -349,6 +350,7 @@ def _insert_variant(
     image = entry.get("image")
     image_url = entry.get("image_url")
 
+    scraped_at = datetime.now(timezone.utc)
     values = {
         "product_id": product_id,
         "color_id": color_id,
@@ -365,16 +367,49 @@ def _insert_variant(
         "currency": "USD",
         "low_stock": low_stock,
         "stock_note": stock_text[:200] if stock_text else None,
-        "scraped_at": datetime.now(timezone.utc),
+        "scraped_at": scraped_at,
     }
     if isinstance(image, bytes):
         values["image"] = image
     if isinstance(image_url, str) and image_url:
         values["image_url"] = image_url[:1000]
 
-    # Keep one observation per scrape. Current-product queries already select
-    # the latest row per product/color/size, while predictions need history.
-    db.add(ProductVariant(**values))
+    variant_query = db.query(ProductVariant).filter(ProductVariant.product_id == product_id)
+    variant_query = (
+        variant_query.filter(ProductVariant.color_id.is_(None))
+        if color_id is None
+        else variant_query.filter(ProductVariant.color_id == color_id)
+    )
+    variant_query = (
+        variant_query.filter(ProductVariant.size_id.is_(None))
+        if size_id is None
+        else variant_query.filter(ProductVariant.size_id == size_id)
+    )
+    variant = variant_query.order_by(
+        ProductVariant.scraped_at.desc(),
+        ProductVariant.variant_id.desc(),
+    ).first()
+
+    if variant:
+        for key, value in values.items():
+            if key in {"image", "image_url"} and value is None:
+                continue
+            setattr(variant, key, value)
+    else:
+        variant = ProductVariant(**values)
+        db.add(variant)
+        db.flush()
+
+    db.add(VariantSnapshot(
+        variant_id=variant.variant_id,
+        price=price,
+        original_price=orig_price,
+        discount_pct=discount_pct,
+        is_available=bool(is_available),
+        low_stock=low_stock,
+        stock_note=stock_text[:200] if stock_text else None,
+        scraped_at=scraped_at,
+    ))
     db.flush()
 
 
@@ -390,19 +425,52 @@ def _upsert_review(db: Session, product_id: int, review_data: dict) -> None:
     if review_count < 0 or review_count >= MAX_REALISTIC_REVIEW_COUNT:
         review_count = 0
 
-    db.add(Review(
+    scraped_at = datetime.now(timezone.utc)
+    values = {
+        "product_id": product_id,
+        "rating_avg": review_data.get("rating"),
+        "review_count": review_count,
+        "fit_feedback": review_data.get("fit"),
+        "stars_1_pct": star.get("1") or star.get(1),
+        "stars_2_pct": star.get("2") or star.get(2),
+        "stars_3_pct": star.get("3") or star.get(3),
+        "stars_4_pct": star.get("4") or star.get(4),
+        "stars_5_pct": star.get("5") or star.get(5),
+        "pros": pros if isinstance(pros, list) else None,
+        "cons": cons if isinstance(cons, list) else None,
+        "scraped_at": scraped_at,
+    }
+
+    review = db.query(Review).filter_by(product_id=product_id).order_by(
+        Review.scraped_at.desc(),
+        Review.review_id.desc(),
+    ).first()
+
+    if isinstance(comments, list):
+        existing_comments = review.comment_json if review and isinstance(review.comment_json, list) else []
+        values["comment_json"] = _merge_review_comments(existing_comments, comments)
+    elif isinstance(comments, dict):
+        values["comment_json"] = comments
+
+    if review:
+        for key, value in values.items():
+            setattr(review, key, value)
+    else:
+        review = Review(**values)
+        db.add(review)
+        db.flush()
+
+    db.add(ProductReviewSnapshot(
         product_id=product_id,
-        rating_avg=review_data.get("rating"),
+        rating_avg=values["rating_avg"],
         review_count=review_count,
-        fit_feedback=review_data.get("fit"),
-        stars_1_pct=star.get("1") or star.get(1),
-        stars_2_pct=star.get("2") or star.get(2),
-        stars_3_pct=star.get("3") or star.get(3),
-        stars_4_pct=star.get("4") or star.get(4),
-        stars_5_pct=star.get("5") or star.get(5),
-        pros=pros if isinstance(pros, list) else None,
-        cons=cons if isinstance(cons, list) else None,
-        comment_json=comments if isinstance(comments, (list, dict)) else None,
+        fit_feedback=values["fit_feedback"],
+        stars_1_pct=values["stars_1_pct"],
+        stars_2_pct=values["stars_2_pct"],
+        stars_3_pct=values["stars_3_pct"],
+        stars_4_pct=values["stars_4_pct"],
+        stars_5_pct=values["stars_5_pct"],
+        scraped_at=scraped_at,
     ))
 
 
