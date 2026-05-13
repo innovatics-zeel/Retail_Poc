@@ -2,7 +2,7 @@
 run_recommendations.py — Orchestrator for the recommendations pipeline.
 
 Flow:
-    trend_scores  →  pattern_detector  →  claude_drafter  →  recommendations table
+    trend_scores  →  pattern_detector  →  llm_drafter  →  recommendations table
 
 Usage:
     python -m recommendations.run_recommendations
@@ -48,16 +48,16 @@ def run(category: str | None = None, platform: str | None = None) -> list[dict]:
         console.print("  [yellow]No patterns detected — collect more data via the scraper.[/yellow]")
         return []
 
-    # ── Step 2: Draft via Claude ──────────────────────────────────
-    console.print(f"\n[yellow]Step 2:[/yellow] Drafting {len(patterns)} recommendations via Claude...")
+    # ── Step 2: Draft via configured LLM ──────────────────────────
+    console.print(f"\n[yellow]Step 2:[/yellow] Drafting {len(patterns)} recommendations via configured LLM...")
     recommendations: list[dict] = []
     try:
-        from recommendations.claude_drafter import draft_all
+        from recommendations.llm_drafter import draft_all
         recommendations = draft_all(patterns)
         console.print(f"  [green]✓[/green] {len(recommendations)} recommendations drafted")
     except Exception as exc:
-        console.print(f"  [red]✗[/red] claude_drafter: {exc}")
-        logger.exception("claude_drafter failed")
+        console.print(f"  [red]✗[/red] llm_drafter: {exc}")
+        logger.exception("llm_drafter failed")
         return []
 
     # ── Step 3: Save to DB ────────────────────────────────────────
@@ -69,6 +69,7 @@ def run(category: str | None = None, platform: str | None = None) -> list[dict]:
     except Exception as exc:
         console.print(f"  [red]✗[/red] recommendation_store: {exc}")
         logger.exception("recommendation_store failed")
+        return []
 
     elapsed = round(time.time() - t0, 1)
     console.rule(f"[bold green]Done in {elapsed}s — {len(recommendations)} recommendations")

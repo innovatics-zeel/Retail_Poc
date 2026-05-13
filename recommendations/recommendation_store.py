@@ -30,7 +30,7 @@ def save_recommendations(recommendations: list[dict]) -> int:
                         (category, platform, pattern_type, evidence,
                          recommendation_text, observation, action, impact, confidence)
                     VALUES
-                        (:category, :platform, :pattern_type, :evidence::jsonb,
+                        (:category, :platform, :pattern_type, CAST(:evidence AS JSONB),
                          :rec_text, :observation, :action, :impact, :confidence)
                 """),
                 {

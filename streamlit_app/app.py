@@ -7,6 +7,10 @@ import os
 import re
 import uuid
 import warnings
+
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 warnings.filterwarnings("ignore")
 
 sys.path.insert(0, ".")
@@ -308,6 +312,57 @@ st.markdown(f"""
     .rec-body {{ padding:12px 16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; color:#3e4e66; font-size:.78rem; line-height:1.35; }}
     .rec-body b {{ color:var(--ink); display:block; font-size:.7rem; letter-spacing:.04em; margin-bottom:4px; }}
     .action-row {{ padding:0 16px 14px; }}
+    .askact-grid {{ display:grid; grid-template-columns:.86fr 1.04fr; gap:16px; align-items:start; }}
+    .ask-card {{ background:#091528; border:1px solid #152944; border-radius:8px; overflow:hidden; box-shadow:0 1px 2px rgba(15,27,45,.04); }}
+    .ask-head {{ height:55px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:0 18px; border-bottom:1px solid #1d3048; }}
+    .ask-title-wrap {{ display:flex; align-items:center; gap:10px; min-width:0; }}
+    .iq-dot {{ width:28px; height:28px; border-radius:99px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:.72rem; font-weight:900; flex-shrink:0; }}
+    .ask-title {{ color:#fff; font-weight:900; font-size:.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .online-badge {{ color:var(--accent); font-size:.68rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; display:flex; align-items:center; gap:6px; }}
+    .online-badge:before {{ content:""; width:6px; height:6px; border-radius:99px; background:var(--accent); box-shadow:0 0 8px rgba(8,165,214,.8); }}
+    .ask-body {{ padding:18px; }}
+    .ask-question {{ background:#111e31; border-left:3px solid var(--warning); border-radius:5px; padding:12px 14px; margin-bottom:14px; }}
+    .ask-label {{ display:block; color:var(--warning); font-size:.68rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }}
+    .ask-question div {{ color:#fff; font-size:.9rem; line-height:1.35; }}
+    .ask-answer {{ color:#d8e2ee; font-size:.86rem; line-height:1.48; margin-bottom:14px; }}
+    .ask-answer b:first-child {{ color:var(--accent); letter-spacing:.08em; font-size:.68rem; margin-right:7px; }}
+    .ask-bars {{ border:1px solid #243852; background:#0d1b2e; border-radius:5px; padding:12px 13px; margin-bottom:12px; }}
+    .ask-bars-title {{ color:#96a6ba; font-size:.68rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; margin-bottom:9px; }}
+    .ask-bar-row {{ display:grid; grid-template-columns:72px 1fr 38px; gap:10px; align-items:center; color:#d8e2ee; font-size:.78rem; margin:7px 0; }}
+    .ask-bar-track {{ height:5px; background:#243852; border-radius:99px; overflow:hidden; }}
+    .ask-bar-fill {{ height:100%; background:var(--accent); border-radius:99px; }}
+    .ask-citation {{ background:#06273d; border:1px solid #084666; border-radius:5px; padding:11px 13px; color:#b7c5d6; font-size:.76rem; line-height:1.45; }}
+    .ask-citation b:first-child {{ color:var(--accent); display:block; letter-spacing:.08em; font-size:.68rem; margin-bottom:6px; }}
+    .ask-cite-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }}
+    .suggested-panel {{ margin-top:12px; }}
+    .suggested-row {{ display:grid; grid-template-columns:34px 1fr 18px; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-bottom:8px; color:var(--ink); font-size:.8rem; background:#fff; }}
+    .suggested-num {{ background:#e2f4fb; color:var(--accent); border-radius:4px; padding:3px 6px; font-size:.68rem; font-weight:900; text-align:center; }}
+    .suggested-arrow {{ color:#9aabc0; text-align:right; }}
+    .rec-list-card {{ border:1px solid var(--line); border-radius:7px; background:#fff; margin:12px 0; padding:14px 16px 11px; width:100%; box-sizing:border-box; }}
+    .rec-list-card * {{ box-sizing:border-box; }}
+    .rec-list-top {{ display:grid; grid-template-columns:42px minmax(0, 1fr) auto; gap:12px; align-items:start; width:100%; }}
+    .rec-list-main {{ min-width:0; }}
+    .rec-rank {{ background:#edf2f7; color:#8190a4; border-radius:4px; padding:5px 8px; font-size:.75rem; font-weight:900; text-align:center; }}
+    .rec-list-title {{ color:var(--ink); font-size:.98rem; line-height:1.22; font-weight:900; margin-bottom:4px; }}
+    .rec-list-copy {{ color:#536278; font-size:.78rem; line-height:1.38; }}
+    .rec-conf {{ border-radius:4px; padding:4px 9px; font-size:.68rem; line-height:1; font-weight:900; white-space:nowrap; }}
+    .rec-conf.high {{ background:#d9f5e6; color:var(--success); }}
+    .rec-conf.medium {{ background:#fff0c7; color:#b97900; }}
+    .rec-conf.low {{ background:#edf2f7; color:#52617a; }}
+    .rec-ei {{ display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:1px; background:#edf2f6; margin:12px 0 10px; border-radius:4px; overflow:hidden; width:100%; min-width:0; }}
+    .rec-ei-cell {{ background:#f6f9fc; padding:9px 11px; color:#3e4e66; font-size:.74rem; line-height:1.35; min-width:0; overflow-wrap:break-word; word-break:normal; }}
+    .rec-ei-cell b {{ display:block; color:var(--accent); font-size:.66rem; letter-spacing:.08em; margin-bottom:4px; }}
+    .rec-ei-cell.impact b {{ color:var(--warning); }}
+    .rec-ei-text {{ display:block; width:100%; white-space:normal; overflow-wrap:break-word; }}
+    .rec-foot {{ display:flex; align-items:center; justify-content:flex-end; gap:10px; color:var(--muted); font-size:.7rem; padding-top:8px; }}
+    .rec-status {{ font-size:.7rem; font-weight:800; white-space:nowrap; }}
+    .rec-status.pending {{ color:#6f7d95; }}
+    .rec-status.accepted {{ color:var(--success); }}
+    .rec-status.dismissed {{ color:var(--danger); }}
+    .rec-status.modified {{ color:#b97900; }}
+    .rec-actions {{ margin:-7px 0 14px 0; padding:0 16px 12px; border:1px solid var(--line); border-top:0; border-left-width:4px; border-radius:0 0 7px 7px; background:#fff; }}
+    .rec-actions [data-testid="stHorizontalBlock"] {{ gap:8px !important; }}
+    .rec-actions button {{ min-height:30px !important; border-radius:4px !important; font-size:.76rem !important; font-weight:800 !important; }}
     .empty-panel {{ background:#fff; border:1px dashed var(--line); border-radius:7px; padding:18px; color:var(--muted); font-size:.84rem; }}
     .mini-tab-controls [data-testid="stHorizontalBlock"] {{ gap:3px !important; background:#edf3f8; padding:3px; border-radius:6px; }}
     .mini-tab-controls button {{
@@ -631,6 +686,62 @@ _PLATFORM_LABELS = {
     "amazon": "Amazon",
     "nordstrom": "Nordstrom",
 }
+
+
+def _repair_stale_widget_state() -> None:
+    """
+    Streamlit can retain stale browser widget IDs after large layout changes.
+    In 1.35 this may raise a KeyError while building filtered_state before the
+    actual widget renders. Drop only broken private widget entries and then let
+    the keyed widgets below recreate clean state.
+    """
+    try:
+        from streamlit.runtime.state.session_state_proxy import get_session_state
+
+        raw_state = get_session_state()
+        old_state = getattr(raw_state, "_old_state", None)
+        new_session_state = getattr(raw_state, "_new_session_state", None)
+        new_widget_state = getattr(raw_state, "_new_widget_state", None)
+        key_mapper = getattr(raw_state, "_key_id_mapper", None)
+        if old_state is None:
+            return
+
+        stale_keys: set[str] = set()
+        for key in list(old_state.keys()):
+            widget_id = raw_state._get_widget_id(key)
+            if not isinstance(widget_id, str) or not widget_id.startswith("$$WIDGET_ID"):
+                continue
+            try:
+                raw_state[widget_id]
+            except KeyError:
+                stale_keys.update({str(key), widget_id})
+
+        for key in stale_keys:
+            old_state.pop(key, None)
+            if new_session_state is not None:
+                new_session_state.pop(key, None)
+            if new_widget_state is not None:
+                new_widget_state.states.pop(key, None)
+                new_widget_state.widget_metadata.pop(key, None)
+            if key_mapper is not None and key.startswith("$$WIDGET_ID"):
+                user_key = key_mapper._id_key_mapping.pop(key, None)
+                if user_key:
+                    key_mapper._key_id_mapping.pop(user_key, None)
+    except Exception:
+        pass
+
+
+_repair_stale_widget_state()
+for _filter_key, _filter_default in {
+    "cat_filter": "mens_tshirts",
+    "plt_filter": "All",
+    "window_filter": "Last 30 Days",
+}.items():
+    try:
+        st.session_state.setdefault(_filter_key, _filter_default)
+    except Exception:
+        pass
+
 nav_logo, nav_crumbs, nav_cat, nav_platform, nav_window = st.columns([1.15, 3.7, 1.35, 1.7, 1.25])
 with nav_logo:
     st.markdown("""
@@ -733,11 +844,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "1  LAYER 01 · Descriptive",
-    "2  LAYER 02 · Conversational",
-    "3  LAYER 03 · Predictive",
-    "4  LAYER 04 · Recommendations",
+    "2  LAYER 02 · Predictive",
+    "3  LAYER 03 · Ask & Act",
 ])
 
 
@@ -1710,7 +1820,7 @@ with tab1:
     footer_html = f"""
 <div class="footer-note">
   <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product & Market Intelligence — Database snapshot</span>
-  <b>Tab 1 of 4 · Descriptive · SKU-level view</b>
+  <b>Tab 1 of 3 · Descriptive · SKU-level view</b>
 </div>"""
 
     st.markdown(signal_html, unsafe_allow_html=True)
@@ -1725,234 +1835,11 @@ with tab1:
 """, unsafe_allow_html=True)
 
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — CONVERSATIONAL INTELLIGENCE
+# TAB 2 — PREDICTIVE INTELLIGENCE
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    if df.empty:
-        st.info("No data yet. Run the scraper first.")
-    else:
-        trend_scores_df = load_trend_scores(
-            category=None if category_filter == "All" else category_filter,
-            platform=None if platform_filter == "All" else platform_filter,
-        )
-        ctx = _market_signal_context(df, sku_df, trend_scores_df)
-        st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
-
-        SUGGESTED = [
-            ("Attribute Drivers", "Which attributes explain the highest converting SKUs?"),
-            ("Platform Gap", "Where does Nordstrom over-index versus Amazon?"),
-            ("Price Corridor", "What price band should we prioritize next month?"),
-            ("Sentiment Risk", "Which product features create rating risk?"),
-            ("SKU White Space", "Which color and fit combinations look under-supplied?"),
-            ("Assortment Move", "What should the merchant team add or reduce first?"),
-        ]
-
-        st.markdown('<div class="dashboard-pad">', unsafe_allow_html=True)
-        left, right = st.columns([0.72, 1.28])
-        with left:
-            st.markdown(f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Question Starters</div>
-    <div class="panel-sub">Grounded in current SKU data</div>
-  </div>
-  <div class="panel-body">
-    <div class="question-list">
-      {''.join(f'<div class="q-chip">{_safe(title)}<span>{_safe(q)}</span></div>' for title, q in SUGGESTED)}
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-            st.markdown(f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Grounding Context</div>
-    <div class="panel-sub">Used by the answer layer</div>
-  </div>
-  <div class="panel-body">
-    <div class="context-grid" style="grid-template-columns:1fr;">
-      <div class="context-card"><b>{len(df):,}</b><span>products loaded</span></div>
-      <div class="context-card"><b>{ctx["sku_count"]:,}</b><span>variant/SKU rows</span></div>
-      <div class="context-card"><b>{ctx["kpis"]["total_reviews"]:,}</b><span>review signals</span></div>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-        with right:
-            st.markdown(f"""
-<div class="mi-panel">
-  <div class="panel-head" style="min-height:54px; padding:0 18px;">
-    <div style="display:flex; align-items:center; gap:10px;">
-      <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,{INK} 0%,#1c3353 100%);
-                  display:grid;place-items:center;font-size:.9rem;flex-shrink:0;">🤖</div>
-      <div>
-        <div class="panel-title" style="line-height:1.1;">Conversational Market Analyst</div>
-        <div style="color:{MUTED};font-size:.71rem;margin-top:1px;">Active filters:
-          <strong style="color:{INK};">{_safe(_visible_category)}</strong> ·
-          <strong style="color:{INK};">{_safe(_visible_platform)}</strong>
-        </div>
-      </div>
-    </div>
-    <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
-      <span class="chat2-header-badge sql">SQL</span>
-      <span class="chat2-header-badge vec">Vector</span>
-      <span class="chat2-header-badge hybrid">Hybrid</span>
-    </div>
-  </div>
-  <div style="padding:10px 18px 12px; border-bottom:1px solid #edf2f6;">
-    <div style="background:#EDF8FF;border-left:3px solid {ACCENT};border-radius:5px;
-                padding:9px 13px;font-size:.78rem;line-height:1.42;color:#1a3a52;">
-      Ask about SKU attributes, platform gaps, price bands, review sentiment, or white-space
-      opportunities — answers are grounded in your live product &amp; review data.
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-            st.markdown(
-                "<div style='background:#fff;border:1px solid #E2EAF4;border-radius:12px;"
-                "padding:12px 14px 10px;margin-top:8px;'>",
-                unsafe_allow_html=True,
-            )
-
-            # ── Session state init ────────────────────────────────────────────
-            if "chat2_session_id" not in st.session_state:
-                st.session_state["chat2_session_id"] = str(uuid.uuid4())
-            if "chat2_messages" not in st.session_state:
-                st.session_state["chat2_messages"] = []
-            if "chat2_pending" not in st.session_state:
-                st.session_state["chat2_pending"] = None
-            if "chat2_input_ver" not in st.session_state:
-                st.session_state["chat2_input_ver"] = 0
-
-            # ── Load chatbot (cached across reruns) ───────────────────────────
-            _orch, _chatbot_err = _get_chatbot()
-
-            if _chatbot_err:
-                st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
-            else:
-                # ── Chat history ──────────────────────────────────────────────
-                chat_area = st.container(height=460, border=False)
-                with chat_area:
-                    if not st.session_state["chat2_messages"]:
-                        st.markdown(
-                            "<div style='display:flex;flex-direction:column;align-items:center;"
-                            "justify-content:center;height:380px;gap:14px;'>"
-                            "<div style='width:52px;height:52px;border-radius:14px;"
-                            "background:linear-gradient(135deg,#0F1B2D 0%,#1c3353 100%);"
-                            "display:grid;place-items:center;font-size:1.4rem;"
-                            "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
-                            "<div style='text-align:center;'>"
-                            "<div style='color:#3a4d62;font-size:.9rem;font-weight:700;"
-                            "margin-bottom:5px;'>Ready to analyse your data</div>"
-                            "<div style='color:#8fa3b8;font-size:.79rem;line-height:1.5;max-width:300px;'>"
-                            "Ask about products, pricing, trends, or competitor gaps — "
-                            "answers are grounded in live SKU &amp; review data."
-                            "</div></div></div>",
-                            unsafe_allow_html=True,
-                        )
-                    for msg in st.session_state["chat2_messages"]:
-                        _avatar = "🤖" if msg["role"] == "assistant" else "👤"
-                        with st.chat_message(msg["role"], avatar=_avatar):
-                            if msg["role"] == "assistant":
-                                _render_chat_response(msg["content"])
-                            else:
-                                st.markdown(msg["content"])
-                            if msg.get("debug"):
-                                _chat2_render_debug(msg["debug"])
-
-                # ── Suggestion chips ──────────────────────────────────────────
-                st.markdown(
-                    "<div style='margin:8px 0 4px;color:#8fa3b8;font-size:.71rem;"
-                    "font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>"
-                    "Quick questions</div>",
-                    unsafe_allow_html=True,
-                )
-                bcols = st.columns(3)
-                for i, (title, q) in enumerate(SUGGESTED[:3]):
-                    if bcols[i].button(
-                        title, key=f"c2_sug_{i}",
-                        use_container_width=True, help=q,
-                    ):
-                        st.session_state["chat2_pending"] = q
-                        st.rerun()
-
-                # ── Input row ─────────────────────────────────────────────────
-                st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
-                in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
-                with in_col:
-                    typed = st.text_input(
-                        "chat2_typed",
-                        value="",
-                        placeholder="Ask about attributes, gaps, pricing, reviews…",
-                        key=f"chat2_input_{st.session_state['chat2_input_ver']}",
-                        label_visibility="collapsed",
-                    )
-                with send_col:
-                    send_clicked = st.button(
-                        "Send →", type="primary", key="chat2_send",
-                        use_container_width=True,
-                    )
-                with clr_col:
-                    if st.button("Clear", key="chat2_clear", use_container_width=True):
-                        _orch.clear_session(st.session_state["chat2_session_id"])
-                        st.session_state["chat2_messages"] = []
-                        st.session_state["chat2_session_id"] = str(uuid.uuid4())
-                        st.rerun()
-
-                # ── Process question ──────────────────────────────────────────
-                pending_q = st.session_state.get("chat2_pending")
-                if pending_q:
-                    st.session_state["chat2_pending"] = None
-
-                user_q = pending_q or (
-                    typed.strip() if send_clicked and typed.strip() else None
-                )
-
-                if user_q:
-                    st.session_state["chat2_input_ver"] += 1  # bump key → fresh empty widget
-                    st.session_state["chat2_messages"].append(
-                        {"role": "user", "content": user_q}
-                    )
-                    with chat_area:
-                        with st.chat_message("assistant", avatar="🤖"):
-                            st.markdown(
-                                '<div class="typing-indicator">'
-                                '<span class="typing-dot"></span>'
-                                '<span class="typing-dot"></span>'
-                                '<span class="typing-dot"></span>'
-                                '</div>',
-                                unsafe_allow_html=True,
-                            )
-                    result = _orch.process_question(
-                        session_id=st.session_state["chat2_session_id"],
-                        question=user_q,
-                    )
-                    response = result.get("response") or "Unable to process the request."
-                    debug = {
-                        "intent": result.get("intent"),
-                        "tool_response": result.get("tool_response"),
-                        "resolved_question": result.get("resolved_question"),
-                    }
-                    st.session_state["chat2_messages"].append({
-                        "role": "assistant",
-                        "content": response,
-                        "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
-                    })
-                    st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)  # close chat white card
-
-        st.markdown("</div>", unsafe_allow_html=True)  # close dashboard-pad
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — PREDICTIVE INTELLIGENCE
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab3:
     if df.empty:
         st.info("No data yet. Run the scraper first.")
     else:
@@ -2076,13 +1963,13 @@ with tab3:
 </div>
 <div class="footer-note">
   <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product & Market Intelligence — Database snapshot</span>
-  <b>Tab 3 of 4 · Predictive · Screen 2 of 4</b>
+  <b>Tab 2 of 3 · Predictive</b>
 </div>
 """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — RECOMMENDATION INTELLIGENCE
+# TAB 3 — ASK & ACT  (Conversational + Recommendations)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _PATTERN_LABELS = {
@@ -2094,7 +1981,7 @@ _PATTERN_LABELS = {
     "rating_outlier":      ("⭐", "Rating Outlier",       "#9B59B6"),
 }
 
-with tab4:
+with tab3:
     if df.empty:
         st.info("No data yet. Run the scraper first.")
     else:
@@ -2105,29 +1992,64 @@ with tab4:
         ctx = _market_signal_context(df, sku_df, trend_scores_df)
         st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
 
+        # ── KPI strip ─────────────────────────────────────────────────────────
+        rising_label_kpi    = _label(ctx["rising_attr"],   "Run predictions")
+        declining_label_kpi = _label(ctx["declining_attr"], "Run predictions")
+        rising_gain_txt = (
+            f'<span style="color:{SUCCESS};font-weight:700;">{ctx["rising_gain"]:+d}%</span>'
+            f' review-velocity gain · last 30 days'
+            if ctx.get("rising_gain") is not None else
+            "No trend score yet — run predictions"
+        )
+        declining_gain_txt = (
+            f'<span style="color:{DANGER};font-weight:700;">{ctx["declining_gain"]:+d}%</span>'
+            f' review-velocity drop · last 30 days'
+            if ctx.get("declining_gain") is not None else
+            "No trend score yet — run predictions"
+        )
+        st.markdown(f"""
+<div style="background:#fff;border-bottom:1px solid {LINE};padding:14px 30px;
+            display:grid;grid-template-columns:repeat(4,1fr);gap:20px;">
+  <div>
+    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Trending Styles Detected</div>
+    <div style="font-size:1.7rem;font-weight:800;color:{INK};margin-bottom:2px;">{ctx['sku_count']:,} <span style="font-size:.8rem;color:{MUTED};font-weight:400;">SKUs</span></div>
+    <div style="font-size:.75rem;color:{MUTED};">{len(df):,} products loaded</div>
+  </div>
+  <div>
+    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Converting Price Band</div>
+    <div style="font-size:1.7rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(ctx['band_label'])}</div>
+    <div style="font-size:.75rem;color:{MUTED};">Strongest converting corridor</div>
+  </div>
+  <div>
+    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Top Rising Attribute</div>
+    <div style="font-size:1.35rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(rising_label_kpi)}</div>
+    <div style="font-size:.75rem;">{rising_gain_txt}</div>
+  </div>
+  <div>
+    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Top Declining Attribute</div>
+    <div style="font-size:1.35rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(declining_label_kpi)}</div>
+    <div style="font-size:.75rem;">{declining_gain_txt}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # ── Pipeline controls (compact row) ───────────────────────────────────
         st.markdown('<div class="dashboard-pad">', unsafe_allow_html=True)
-        ctrl1, ctrl2, ctrl3 = st.columns([1.1, 1.1, 2.8])
+        ctrl1, ctrl2, ctrl_gap = st.columns([1.1, 1.1, 7.8])
         with ctrl1:
-            run_all = st.button("Run Full Pipeline", type="primary", key="run_pipeline", use_container_width=True)
+            run_all = st.button("Run Pipeline", type="primary", key="run_pipeline", use_container_width=True)
         with ctrl2:
             status_filter = st.selectbox(
                 "Status",
                 ["All", "pending", "accepted", "dismissed", "modified"],
                 key="rec_status_filter",
             )
-        with ctrl3:
-            st.markdown(f"""
-<div class="why-box" style="margin:0;">
-  <b>WHY</b> Recommendations combine pattern detection, predictive momentum, price-band corridors, and review sentiment into action-ready merchandise moves.
-</div>
-""", unsafe_allow_html=True)
 
         if run_all:
             with st.spinner("Running predictions + generating recommendations..."):
                 try:
                     from predictions.run_predictions import run as _pred_run
                     pred_result = _pred_run()
-
                     if pred_result["scores"] == 0:
                         st.warning("No trend scores computed — ensure products are in the DB.")
                     else:
@@ -2142,164 +2064,293 @@ with tab4:
                 except Exception as _e:
                     st.error(f"Pipeline failed: {_e}")
 
-        # ── Load recommendations from DB ───────────────────────────
+        # ── Load recommendations ───────────────────────────────────────────────
         status_q = None if status_filter == "All" else status_filter
         recs_from_db = load_recommendations(
             category=None if category_filter == "All" else category_filter,
             platform=None if platform_filter == "All" else platform_filter,
             status=status_q,
-            limit=30,
+            limit=20,
         )
-        all_recs_raw = load_recommendations(limit=1000)
-        n_acc  = sum(1 for r in all_recs_raw if r["status"] == "accepted")
-        n_dis  = sum(1 for r in all_recs_raw if r["status"] == "dismissed")
-        n_mod  = sum(1 for r in all_recs_raw if r["status"] == "modified")
-        n_pen  = sum(1 for r in all_recs_raw if r["status"] == "pending")
+        n_active = sum(1 for r in recs_from_db if r["status"] == "pending")
 
-        st.markdown(f"""
-<div class="rec-grid">
-  <div class="forecast-left">
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Action Queue</div>
-        <div class="panel-sub">Accept · modify · dismiss</div>
-      </div>
-      <div class="panel-body">
-        <div class="rec-summary-grid">
-          <div class="rec-stat"><b>{len(all_recs_raw):,}</b><span>Total recommendations</span></div>
-          <div class="rec-stat"><b>{n_pen:,}</b><span>Pending review</span></div>
-          <div class="rec-stat"><b>{n_acc:,}</b><span>Accepted actions</span></div>
-          <div class="rec-stat"><b>{n_mod + n_dis:,}</b><span>Modified or dismissed</span></div>
-        </div>
-        <div class="insight"><b>INSIGHT</b>Focus first on recommendations tied to <strong>{_safe(_label(ctx["rising_attr"]))}</strong> and the <strong>{_safe(ctx["band_label"])}</strong> corridor.</div>
-      </div>
+        SUGGESTED = [
+            ("Attribute Drivers", "Which attributes explain the highest converting SKUs?"),
+            ("Platform Gap", "Where does Nordstrom over-index versus Amazon?"),
+            ("Price Corridor", "What price band should we prioritize next month?"),
+            ("Sentiment Risk", "Which product features create rating risk?"),
+            ("SKU White Space", "Which color and fit combinations look under-supplied?"),
+            ("Assortment Move", "What should the merchant team add or reduce first?"),
+        ]
+
+        # ── 2-column layout: Chat (left) + Recommendations (right) ───────────
+        left_col, right_col = st.columns([0.86, 1.04], gap="medium")
+
+        # ─────────────────────────────────────────────────────────────────────
+        # LEFT — Ask the Market (Conversational)
+        # ─────────────────────────────────────────────────────────────────────
+        with left_col:
+            st.markdown(f"""
+<div class="ask-card">
+  <div class="ask-head">
+    <div class="ask-title-wrap">
+      <div class="iq-dot">IQ</div>
+      <div class="ask-title">Ask the Market — Innovatics IQ</div>
     </div>
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Decision Inputs</div>
-        <div class="panel-sub">Current filters</div>
-      </div>
-      <div class="panel-body">
-        <div class="context-grid" style="grid-template-columns:1fr;">
-          <div class="context-card"><b>{_safe(_visible_category)}</b><span>Category</span></div>
-          <div class="context-card"><b>{_safe(_visible_platform)}</b><span>Platforms</span></div>
-          <div class="context-card"><b>{ctx["kpis"]["total_reviews"]:,}</b><span>Review evidence</span></div>
-        </div>
-      </div>
-    </div>
+    <div class="online-badge">Online</div>
   </div>
-  <div>
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Recommendation Intelligence</div>
-        <div class="panel-sub">{len(recs_from_db):,} visible · {escape(status_filter.lower())}</div>
-      </div>
-      <div class="panel-body">
+  <div class="ask-body">
 """, unsafe_allow_html=True)
 
-        if not recs_from_db:
-            st.markdown("""
-<div class="empty-panel">No recommendations yet. Run the full pipeline to generate pattern-detected, Claude-drafted actions from your scraped SKU data.</div>
-""", unsafe_allow_html=True)
-        else:
-            for rec in recs_from_db:
-                rec_id = int(rec["rec_id"])
-                status = rec.get("status", "pending")
-                pattern_type = rec.get("pattern_type", "")
-                emoji, label, color = _PATTERN_LABELS.get(
-                    pattern_type, ("📌", pattern_type.replace("_", " ").title(), ACCENT)
+            # ── Session state ─────────────────────────────────────────────────
+            if "chat2_session_id" not in st.session_state:
+                st.session_state["chat2_session_id"] = str(uuid.uuid4())
+            if "chat2_messages" not in st.session_state:
+                st.session_state["chat2_messages"] = []
+            if "chat2_pending" not in st.session_state:
+                st.session_state["chat2_pending"] = None
+            if "chat2_input_ver" not in st.session_state:
+                st.session_state["chat2_input_ver"] = 0
+
+            _orch, _chatbot_err = _get_chatbot()
+
+            if _chatbot_err:
+                st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
+            else:
+                chat_area = st.container(height=420, border=False)
+                with chat_area:
+                    if not st.session_state["chat2_messages"]:
+                        st.markdown(
+                            "<div style='display:flex;flex-direction:column;align-items:center;"
+                            "justify-content:center;height:340px;gap:14px;'>"
+                            "<div style='width:52px;height:52px;border-radius:14px;"
+                            "background:linear-gradient(135deg,#0da8d8 0%,#176787 100%);"
+                            "display:grid;place-items:center;font-size:1.4rem;"
+                            "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
+                            "<div style='text-align:center;'>"
+                            "<div style='color:#fff;font-size:.9rem;font-weight:700;"
+                            "margin-bottom:5px;'>Ready to analyse your data</div>"
+                            "<div style='color:#96a6ba;font-size:.79rem;line-height:1.5;max-width:300px;'>"
+                            "Ask about products, pricing, trends, or competitor gaps — "
+                            "answers are grounded in live SKU &amp; review data."
+                            "</div></div></div>",
+                            unsafe_allow_html=True,
+                        )
+                    for msg in st.session_state["chat2_messages"]:
+                        _avatar = "🤖" if msg["role"] == "assistant" else "👤"
+                        with st.chat_message(msg["role"], avatar=_avatar):
+                            if msg["role"] == "assistant":
+                                _render_chat_response(msg["content"])
+                            else:
+                                st.markdown(msg["content"])
+                            if msg.get("debug"):
+                                _chat2_render_debug(msg["debug"])
+
+                st.markdown(
+                    "<div style='margin:8px 0 4px;color:#8fa3b8;font-size:.71rem;"
+                    "font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>"
+                    "Quick questions</div>",
+                    unsafe_allow_html=True,
                 )
-
-                border = (
-                    SUCCESS if status == "accepted"  else
-                    DANGER  if status == "dismissed" else
-                    WARNING if status == "modified"  else color
-                )
-                status_badge_html = {
-                    "accepted":  f'<span style="color:{SUCCESS}">✅ Accepted</span>',
-                    "dismissed": f'<span style="color:{DANGER}">❌ Dismissed</span>',
-                    "modified":  f'<span style="color:{WARNING}">✏️ Modified</span>',
-                }.get(status, '<span style="color:#6F7D95">Pending</span>')
-
-                observation = rec.get("observation", "") or rec.get("recommendation_text", "")
-                action      = rec.get("action", "") or "Not provided by recommendation backend."
-                impact      = rec.get("impact", "") or "Not provided by recommendation backend."
-                confidence  = rec.get("confidence", "Medium")
-                conf_color  = SUCCESS if confidence == "High" else WARNING if confidence == "Medium" else DANGER
-                category_lbl = rec.get("category", "").replace("_", " ").title()
-                platform_lbl = rec.get("platform", "").title()
-                icon_bg = (
-                    SUCCESS if status == "accepted" else
-                    DANGER if status == "dismissed" else
-                    WARNING if status == "modified" else color
-                )
-                icon_text = "✓" if status == "accepted" else "×" if status == "dismissed" else "!" if status == "modified" else "→"
-
-                st.markdown(f"""
-<div class="rec-card" style="border-left:4px solid {border};">
-  <div class="rec-card-head">
-    <div class="rec-icon" style="background:{icon_bg};">{icon_text}</div>
-    <div>
-      <div class="rec-title">{_safe(label)}</div>
-      <div class="rec-meta">{_safe(category_lbl)} · {_safe(platform_lbl)} · <strong style="color:{conf_color};">{_safe(confidence)} confidence</strong></div>
-    </div>
-    <div class="detected">{status_badge_html}</div>
-  </div>
-  <div class="rec-body">
-    <div><b>OBSERVATION</b>{_safe(observation)}</div>
-    <div><b>ACTION</b>{_safe(action)}</div>
-    <div><b>IMPACT</b>{_safe(impact)}<div class="tag-row"><span class="tag info">{_safe(rec.get('attr_key',''))} = {_safe(rec.get('attr_value',''))}</span></div></div>
-  </div>
-  <div class="action-row">
-""", unsafe_allow_html=True)
-
-                if status == "pending":
-                    bcol1, bcol2, bcol3 = st.columns([1, 1, 4])
-                    if bcol1.button("Accept",  key=f"acc_{rec_id}", use_container_width=True):
-                        update_recommendation_status(rec_id, "accepted")
+                bcols = st.columns(3)
+                for i, (title, q) in enumerate(SUGGESTED[:3]):
+                    if bcols[i].button(title, key=f"c2_sug_{i}", use_container_width=True, help=q):
+                        st.session_state["chat2_pending"] = q
                         st.rerun()
-                    if bcol2.button("Dismiss", key=f"dis_{rec_id}", use_container_width=True):
-                        update_recommendation_status(rec_id, "dismissed")
-                        st.rerun()
-                    mod_text = bcol3.text_input(
-                        "Modify:", key=f"mod_{rec_id}",
-                        placeholder="Edit the recommendation text and save..."
+
+                st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
+                in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
+                with in_col:
+                    typed = st.text_input(
+                        "chat2_typed",
+                        value="",
+                        placeholder="Ask about attributes, gaps, pricing, reviews…",
+                        key=f"chat2_input_{st.session_state['chat2_input_ver']}",
+                        label_visibility="collapsed",
                     )
-                    if mod_text and bcol3.button("Save edit", key=f"sav_{rec_id}"):
-                        update_recommendation_status(rec_id, "modified", mod_text)
+                with send_col:
+                    send_clicked = st.button("Send →", type="primary", key="chat2_send", use_container_width=True)
+                with clr_col:
+                    if st.button("Clear", key="chat2_clear", use_container_width=True):
+                        _orch.clear_session(st.session_state["chat2_session_id"])
+                        st.session_state["chat2_messages"] = []
+                        st.session_state["chat2_session_id"] = str(uuid.uuid4())
                         st.rerun()
-                elif status == "modified" and rec.get("modified_text"):
-                    st.markdown(
-                        f"<div class='why-box' style='margin:0;'><b>EDIT</b>{_safe(rec['modified_text'])}</div>",
-                        unsafe_allow_html=True,
-                    )
-                st.markdown("</div></div>", unsafe_allow_html=True)
 
-            st.markdown("""
-<div class="mi-panel" style="margin-top:16px;">
+                pending_q = st.session_state.get("chat2_pending")
+                if pending_q:
+                    st.session_state["chat2_pending"] = None
+
+                user_q = pending_q or (typed.strip() if send_clicked and typed.strip() else None)
+
+                if user_q:
+                    st.session_state["chat2_input_ver"] += 1
+                    st.session_state["chat2_messages"].append({"role": "user", "content": user_q})
+                    with chat_area:
+                        with st.chat_message("assistant", avatar="🤖"):
+                            st.markdown(
+                                '<div class="typing-indicator">'
+                                '<span class="typing-dot"></span>'
+                                '<span class="typing-dot"></span>'
+                                '<span class="typing-dot"></span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
+                    result = _orch.process_question(
+                        session_id=st.session_state["chat2_session_id"],
+                        question=user_q,
+                    )
+                    response = result.get("response") or "Unable to process the request."
+                    debug = {
+                        "intent": result.get("intent"),
+                        "tool_response": result.get("tool_response"),
+                        "resolved_question": result.get("resolved_question"),
+                    }
+                    st.session_state["chat2_messages"].append({
+                        "role": "assistant",
+                        "content": response,
+                        "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
+                    })
+                    st.rerun()
+
+            st.markdown("</div></div>", unsafe_allow_html=True)  # close ask body + card
+
+            # ── Suggested Questions panel ─────────────────────────────────────
+            st.markdown(f"""
+<div class="mi-panel" style="margin-top:10px;">
   <div class="panel-head">
-    <div class="panel-title">Action Mix</div>
-    <div class="panel-sub">Current decision state</div>
+    <div class="panel-title">Suggested Questions</div>
+    <div class="panel-sub">{len(SUGGESTED)} patterns · click to ask</div>
   </div>
   <div class="panel-body">
+    <div class="question-list">
+      {''.join(
+          f'<div class="q-chip" style="cursor:default;">'
+          f'<span style="color:{MUTED};font-size:.65rem;font-weight:700;margin-right:6px;">{str(i+1).zfill(2)}</span>'
+          f'<strong>{_safe(title)}</strong>'
+          f'<span>{_safe(q)}</span></div>'
+          for i, (title, q) in enumerate(SUGGESTED)
+      )}
+    </div>
+  </div>
+</div>
 """, unsafe_allow_html=True)
-            mix_rows = [
-                {"name": "Accepted", "share": int(n_acc / max(len(all_recs_raw), 1) * 100), "change": n_acc, "color": SUCCESS},
-                {"name": "Pending", "share": int(n_pen / max(len(all_recs_raw), 1) * 100), "change": n_pen, "color": ACCENT},
-                {"name": "Modified", "share": int(n_mod / max(len(all_recs_raw), 1) * 100), "change": n_mod, "color": WARNING},
-                {"name": "Dismissed", "share": int(n_dis / max(len(all_recs_raw), 1) * 100), "change": -n_dis, "color": DANGER},
-            ]
-            st.markdown(_bars_html(mix_rows), unsafe_allow_html=True)
-            st.markdown("</div></div>", unsafe_allow_html=True)
-            st.markdown("</div></div></div>", unsafe_allow_html=True)
 
-        if not recs_from_db:
-            st.markdown("</div></div></div>", unsafe_allow_html=True)
+        # ─────────────────────────────────────────────────────────────────────
+        # RIGHT — Market Recommendations
+        # ─────────────────────────────────────────────────────────────────────
+        with right_col:
+            st.markdown(f"""
+<div class="mi-panel">
+  <div class="panel-head">
+    <div class="panel-title">Market Recommendations</div>
+    <div class="panel-sub">Ranked by impact × confidence · {n_active} active</div>
+  </div>
+  <div class="panel-body" style="padding-top:4px;">
+""", unsafe_allow_html=True)
 
+            if not recs_from_db:
+                st.markdown("""
+<div class="empty-panel">No recommendations yet. Click <strong>Run Pipeline</strong> to generate pattern-detected, Claude-drafted actions from your scraped SKU data.</div>
+""", unsafe_allow_html=True)
+            else:
+                for rank, rec in enumerate(recs_from_db[:8], 1):
+                    rec_id      = int(rec["rec_id"])
+                    status      = rec.get("status", "pending")
+                    pattern_type = rec.get("pattern_type", "")
+                    emoji, label, color = _PATTERN_LABELS.get(
+                        pattern_type, ("📌", pattern_type.replace("_", " ").title(), ACCENT)
+                    )
+                    confidence  = rec.get("confidence", "Medium")
+                    conf_color  = SUCCESS if confidence == "High" else WARNING if confidence == "Medium" else DANGER
+                    border = (
+                        SUCCESS if status == "accepted" else
+                        DANGER  if status == "dismissed" else
+                        WARNING if status == "modified"  else color
+                    )
+                    status_label = {
+                        "pending": "Pending",
+                        "accepted": "☑ Accepted",
+                        "dismissed": "Dismissed",
+                        "modified": "Modified",
+                    }.get(status, status.title())
+
+                    observation = rec.get("observation", "") or rec.get("recommendation_text", "")
+                    action      = rec.get("action", "") or label
+                    impact      = rec.get("impact", "") or ""
+                    evidence_ev = rec.get("evidence") or {}
+                    if isinstance(evidence_ev, str):
+                        evidence_txt = evidence_ev
+                    elif isinstance(evidence_ev, dict):
+                        evidence_txt = " · ".join(f"{k}: {v}" for k, v in evidence_ev.items() if v)
+                    else:
+                        evidence_txt = str(evidence_ev) if evidence_ev else ""
+
+                    conf_cls = str(confidence or "Medium").lower()
+                    evidence_html = _safe(evidence_txt or "Evidence is attached to the detected trend score.")
+                    impact_html = _safe(impact or "Expected to improve focus on higher-confidence assortment moves.")
+                    generated = rec.get("generated_at")
+                    try:
+                        generated_label = pd.to_datetime(generated).strftime("%b %-d")
+                    except Exception:
+                        generated_label = "recently"
+
+                    st.markdown(f"""
+<div class="rec-list-card" style="border-left:4px solid {border}; width:100%; box-sizing:border-box;">
+  <div class="rec-list-top">
+    <div class="rec-rank">#{rank:02d}</div>
+    <div class="rec-list-main">
+      <div class="rec-list-title">{_safe(action)}</div>
+      <div class="rec-list-copy">{_safe(observation)}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+      <span class="rec-conf {conf_cls}">{_safe(confidence.upper())}</span>
+      <span class="rec-status {status}">{_safe(status_label)}</span>
+    </div>
+  </div>
+  <div class="rec-ei" style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); width:100%; min-width:0;">
+    <div class="rec-ei-cell" style="min-width:0; overflow-wrap:break-word; white-space:normal;"><b>● EVIDENCE</b><span class="rec-ei-text">{evidence_html}</span></div>
+    <div class="rec-ei-cell impact" style="min-width:0; overflow-wrap:break-word; white-space:normal;"><b>● EXPECTED IMPACT</b><span class="rec-ei-text">{impact_html}</span></div>
+  </div>
+  <div class="rec-foot"><span>Generated {generated_label}</span></div>
+</div>
+""", unsafe_allow_html=True)
+
+                    if status == "pending":
+                        st.markdown(
+                            f'<div class="rec-actions" style="border-left-color:{border};">',
+                            unsafe_allow_html=True,
+                        )
+                        bcol1, bcol2, bcol3, bcol4 = st.columns([0.9, 0.9, 0.9, 3.4])
+                        if bcol1.button("✓ Accept", key=f"acc_{rec_id}", use_container_width=True):
+                            update_recommendation_status(rec_id, "accepted")
+                            st.rerun()
+                        mod_clicked = bcol2.button("Modify", key=f"mod_btn_{rec_id}", use_container_width=True)
+                        if bcol3.button("Dismiss", key=f"dis_{rec_id}", use_container_width=True):
+                            update_recommendation_status(rec_id, "dismissed")
+                            st.rerun()
+                        mod_text = bcol4.text_input(
+                            "Modify recommendation",
+                            key=f"mod_{rec_id}",
+                            placeholder="Edit and press Enter to save...",
+                            label_visibility="collapsed",
+                        ) if mod_clicked or st.session_state.get(f"mod_{rec_id}") else ""
+                        if mod_text:
+                            update_recommendation_status(rec_id, "modified", mod_text)
+                            st.rerun()
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    elif status == "modified" and rec.get("modified_text"):
+                        st.markdown(
+                            f"<div class='why-box' style='margin:0 14px 8px;'><b>EDIT</b>{_safe(rec['modified_text'])}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+            st.markdown("</div></div>", unsafe_allow_html=True)  # close panel-body + mi-panel
+
+        st.markdown("</div>", unsafe_allow_html=True)  # close dashboard-pad
         st.markdown(f"""
-</div></div>
 <div class="footer-note">
-  <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product & Market Intelligence — Database snapshot</span>
-  <b>Tab 4 of 4 · Recommendations · Ask & Act</b>
+  <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product &amp; Market Intelligence — Demonstration data</span>
+  <b>Tab 3 of 3 · Ask &amp; Act</b>
 </div>
 """, unsafe_allow_html=True)
