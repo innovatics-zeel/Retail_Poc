@@ -108,6 +108,29 @@ ORDER BY r.review_count DESC NULLS LAST
 """
 
 
+def load_filter_options() -> dict:
+    """Return dropdown options for Gender, Category, Neck Type, and Platform from lookup tables."""
+    db = _session()
+    try:
+        with db.bind.connect() as conn:
+            genders = [r[0] for r in conn.execute(text("SELECT name FROM genders ORDER BY id"))]
+            categories = [r[0] for r in conn.execute(text("SELECT name FROM categories ORDER BY category_id"))]
+            raw_necks = [r[0] for r in conn.execute(text("SELECT DISTINCT LOWER(name) FROM neck_types ORDER BY 1"))]
+            # deduplicate neck types preserving a clean display form
+            seen, necks = set(), []
+            for n in raw_necks:
+                if n not in seen:
+                    seen.add(n)
+                    necks.append(n.title())
+            platforms = [r[0] for r in conn.execute(text("SELECT name FROM platforms ORDER BY id"))]
+        return {"genders": genders, "categories": categories, "neck_types": necks, "platforms": platforms}
+    except Exception:
+        return {"genders": ["men", "women"], "categories": ["mens_tshirts", "womens_dresses"],
+                "neck_types": [], "platforms": ["amazon", "nordstrom"]}
+    finally:
+        db.close()
+
+
 def load_products(platform: str = None, category: str = None) -> pd.DataFrame:
     db = _session()
     try:

@@ -406,10 +406,8 @@ def build_pdf() -> PDF:
     for item in [
         "Emerging: test buy, small quantity, fast turn.",
         "Accelerating: load up.",
-        "Peak: maintain, prepare exit.",
-        "Plateau: maintain core quantity, monitor weekly.",
+        "Plateau: maintain core quantity, monitor daily.",
         "Declining: mark down, clear.",
-        "Dead: stop reorder, liquidate residual stock.",
     ]:
         bullet(p, item)
 

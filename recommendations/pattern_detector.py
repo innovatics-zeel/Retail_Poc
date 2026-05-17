@@ -3,7 +3,7 @@ pattern_detector.py — Rules engine that finds actionable patterns in trend_sco
 
 Pattern types:
   1. emerging_star       — emerging/accelerating lifecycle + high rating/reviews
-  2. declining_attribute — declining/dead lifecycle + below-avg rating
+  2. declining_attribute — declining lifecycle + below-avg rating
   3. underserved_niche   — high rating but low product count (opportunity gap)
   4. review_leader       — review count >> category average (validated attribute)
   5. cross_platform_gap  — trending on one platform, absent/weak on the other
@@ -48,7 +48,10 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
         df["lifecycle_stage"] = ""
     if "retailer_action" not in df.columns:
         df["retailer_action"] = ""
-    lifecycle = df["lifecycle_stage"].fillna("").str.lower()
+    lifecycle = (
+        df["lifecycle_stage"].fillna("").str.lower()
+        .replace({"peak": "plateau", "dead": "declining"})
+    )
 
     # ── 1. Emerging Star ──────────────────────────────────────────
     stars = df[
@@ -69,7 +72,7 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
 
     # ── 2. Declining Attribute ─────────────────────────────────────
     declining = df[
-        (lifecycle.isin(["declining", "dead"]) | (df["momentum_score"] < -0.10)) &
+        (lifecycle.eq("declining") | (df["momentum_score"] < -0.10)) &
         (df["avg_rating"] < df["category_avg_rating"].fillna(df["avg_rating"]))
     ]
     for _, r in declining.head(2).iterrows():

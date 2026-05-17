@@ -11,6 +11,7 @@ Momentum score is a weighted composite in [-1, 1]:
   0.40 × rating_component + 0.35 × velocity_component + 0.25 × share_component
 
 Score threshold: >0.15 = Rising, <-0.10 = Falling, else Stable
+Lifecycle stages: Emerging, Accelerating, Plateau, Declining
 """
 from __future__ import annotations
 import sys
@@ -28,10 +29,8 @@ ATTR_KEYS = ["color_family", "pattern", "material", "fit", "neck_type", "sleeve_
 RETAIL_ACTIONS = {
     "emerging":     "Test buy: small qty, fast turn",
     "accelerating": "Load up",
-    "peak":         "Maintain, prepare exit",
     "plateau":      "Maintain core qty, monitor daily",
     "declining":    "Mark down, clear",
-    "dead":         "Stop reorder, liquidate residual stock",
 }
 
 _WEIGHTS = {"rating": 0.40, "velocity": 0.35, "share": 0.25}
@@ -199,7 +198,7 @@ def _two_day_lifecycle(series: pd.Series) -> dict:
     growth = latest - previous
 
     if latest <= 0 and previous > 0:
-        stage = "dead"
+        stage = "declining"
     elif growth <= -0.03:
         stage = "declining"
     elif previous <= 0 and latest > 0:
@@ -225,7 +224,7 @@ def _two_day_lifecycle(series: pd.Series) -> dict:
 def _classify_lifecycle(series: pd.Series) -> dict:
     series = series.dropna()
     if series.empty:
-        stage = "dead"
+        stage = "declining"
         latest = previous = peak = growth = 0.0
         weeks_observed = 0
     else:
@@ -239,7 +238,7 @@ def _classify_lifecycle(series: pd.Series) -> dict:
         near_peak = peak > 0 and latest >= peak * 0.9
 
         if latest <= 0 and peak > 0:
-            stage = "dead"
+            stage = "declining"
         elif growth <= -0.03 or (peak >= 0.08 and latest <= peak * 0.55):
             stage = "declining"
         elif weeks_observed <= 2 and latest > 0:
@@ -249,7 +248,7 @@ def _classify_lifecycle(series: pd.Series) -> dict:
         elif len(recent) >= 3 and recent_std <= 0.02:
             stage = "plateau"
         elif near_peak and (growth >= -0.02 or latest >= 0.25):
-            stage = "peak"
+            stage = "plateau"
         elif growth > 0:
             stage = "accelerating"
         else:

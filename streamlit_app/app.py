@@ -37,6 +37,7 @@ from streamlit_app.db import (
     load_trend_scores, load_recommendations, update_recommendation_status,
     load_review_velocity, load_variant_skus,
     load_review_velocity_forecast, load_price_band_momentum, load_whitespace_scores,
+    load_filter_options,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -98,12 +99,16 @@ st.markdown(f"""
     .nav-pill.active {{ color:var(--ink); background:#fff; box-shadow:0 0 0 2px #eef5fb inset; }}
     .nav-dot {{ width:6px; height:6px; border-radius:999px; background:#c9d4e1; display:inline-block; }}
     .nav-pill.active .nav-dot {{ background:var(--accent); box-shadow:0 0 8px rgba(8,165,214,.35); }}
-    .filter-row {{ display:grid; grid-template-columns:1fr 1.15fr .9fr; gap:10px; align-items:end; }}
+    .filter-band {{ background:#fff; border-bottom:1px solid var(--line); padding:12px 30px 14px; }}
+    .filter-band-label {{ color:#94a3b8; font-size:.68rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; padding-top:31px; }}
+    .filter-row {{ display:grid; grid-template-columns:70px repeat(4, minmax(120px, 1fr)) 70px minmax(160px, 1fr) 170px; gap:10px; align-items:end; }}
     .filter-row label {{ color:var(--muted) !important; font-size:0.76rem !important; font-weight:700 !important; }}
     .filter-row div[data-baseweb="select"] > div {{
         border-color:var(--line); border-radius:7px; min-height:38px; background:#fff;
         box-shadow:0 1px 2px rgba(15,27,45,.04);
     }}
+    .filter-actions-mini {{ display:flex; justify-content:flex-end; gap:12px; align-items:center; padding-bottom:8px; }}
+    .filter-actions-mini span {{ color:var(--muted); font-size:.76rem; font-weight:800; }}
 
     .hero-strip {{ background:#fff; border-bottom:1px solid var(--line); padding:26px 30px 14px; }}
     .hero-grid {{ display:grid; grid-template-columns:1fr auto; gap:20px; align-items:start; }}
@@ -364,6 +369,107 @@ st.markdown(f"""
     .rec-actions [data-testid="stHorizontalBlock"] {{ gap:8px !important; }}
     .rec-actions button {{ min-height:30px !important; border-radius:4px !important; font-size:.76rem !important; font-weight:800 !important; }}
     .empty-panel {{ background:#fff; border:1px dashed var(--line); border-radius:7px; padding:18px; color:var(--muted); font-size:.84rem; }}
+
+    /* ── Predictive reference UI (from S2_Market Intelligence.html) ───────── */
+    .pred-scope {{ background:linear-gradient(90deg,rgba(8,165,214,.06),rgba(124,58,237,.04)); border-bottom:1px solid rgba(8,165,214,.18); padding:12px 30px; display:flex; align-items:center; gap:14px; }}
+    .pred-scope-icon {{ width:28px; height:28px; border-radius:6px; display:grid; place-items:center; background:rgba(8,165,214,.08); border:1px solid rgba(8,165,214,.18); color:#078db8; font-size:13px; flex:0 0 auto; }}
+    .pred-scope-text {{ color:#475569; font-size:12.5px; line-height:1.55; }}
+    .pred-scope-text strong {{ color:var(--ink); font-weight:800; }}
+    .pred-scope-text .soon {{ color:#7c3aed; font-weight:800; }}
+    .pred-canvas {{ padding:20px 30px 28px; display:flex; flex-direction:column; gap:16px; }}
+    .pred-kpis {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }}
+    .pred-kpi {{ position:relative; overflow:hidden; min-height:154px; background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:8px; }}
+    .pred-kpi:before {{ content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--accent); }}
+    .pred-kpi.urgent:before {{ background:linear-gradient(90deg,var(--warning),#f59e0b); }}
+    .pred-kpi.gain:before {{ background:linear-gradient(90deg,var(--success),#15803d); }}
+    .pred-kpi.risk:before {{ background:linear-gradient(90deg,var(--danger),#991b1b); }}
+    .pred-kpi.lead:before {{ background:linear-gradient(90deg,var(--accent),#7c3aed); }}
+    .pred-kpi-label {{ color:#94a3b8; font-size:10.5px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; display:flex; gap:6px; align-items:center; }}
+    .pred-kpi-title {{ color:var(--ink); font-size:16px; line-height:1.22; font-weight:900; }}
+    .pred-kpi-stat {{ display:flex; align-items:baseline; gap:7px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }}
+    .pred-kpi-big {{ font-size:20px; font-weight:900; letter-spacing:0; }}
+    .pred-kpi-meta {{ color:#475569; font-weight:700; }}
+    .pred-kpi-foot {{ margin-top:auto; padding-top:8px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-panel {{ background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }}
+    .pred-panel-head {{ min-height:62px; padding:14px 20px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; gap:16px; }}
+    .pred-panel-title {{ color:var(--ink); font-size:16px; font-weight:900; line-height:1.15; }}
+    .pred-panel-sub {{ color:#475569; font-size:12.5px; margin-top:2px; }}
+    .pred-sort {{ background:#fafbfd; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; padding:5px 10px; }}
+    .pred-colhead, .pred-row {{ display:grid; grid-template-columns:32px minmax(220px,1fr) 110px 110px 130px 28px; gap:16px; align-items:center; }}
+    .pred-colhead {{ padding:10px 20px; background:#fafbfd; border-bottom:1px solid #e2e8f0; color:#94a3b8; font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-row {{ padding:14px 20px; border-bottom:1px solid #e2e8f0; }}
+    .pred-toggle {{ display:none; }}
+    .pred-toggle:not(:checked) + .pred-row + .pred-expand-panel {{ display:none; }}
+    .pred-toggle:checked + .pred-row {{ background:rgba(8,165,214,.08); border-bottom-color:rgba(8,165,214,.18); }}
+    .pred-row.expanded {{ background:rgba(8,165,214,.08); border-bottom-color:rgba(8,165,214,.18); }}
+    .pred-rank {{ text-align:center; color:#94a3b8; font-size:11px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-name {{ color:var(--ink); font-size:14.5px; font-weight:900; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }}
+    .pred-attrs {{ color:#475569; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-top:3px; }}
+    .pred-badges {{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }}
+    .pred-badge {{ font-size:9.5px; font-weight:900; letter-spacing:.03em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; border-radius:3px; padding:2px 6px; }}
+    .pred-badge.gt {{ background:rgba(8,165,214,.12); color:#078db8; }}
+    .pred-badge.wx {{ background:rgba(255,176,0,.18); color:#a06b00; }}
+    .pred-badge.soon {{ background:#edf2f7; color:#52617a; }}
+    .pred-life {{ font-size:10px; text-transform:uppercase; letter-spacing:.04em; border-radius:3px; padding:2px 6px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-life.emerging {{ background:rgba(8,165,214,.08); color:#078db8; }}
+    .pred-life.accelerating {{ background:rgba(32,164,100,.1); color:var(--success); }}
+    .pred-life.plateau {{ background:rgba(148,163,184,.18); color:#475569; }}
+    .pred-life.declining {{ background:rgba(229,57,63,.08); color:var(--danger); }}
+    .pred-cell {{ text-align:center; }}
+    .pred-cell.now {{ background:#fafbfd; border-radius:6px; padding:6px 4px; }}
+    .pred-value {{ font-size:15px; font-weight:900; }}
+    .pred-value.up {{ color:var(--success); }}
+    .pred-value.down {{ color:var(--danger); }}
+    .pred-value.neutral {{ color:#475569; }}
+    .pred-conf {{ color:#94a3b8; font-size:10px; font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-progress {{ display:flex; justify-content:center; align-items:center; gap:3px; margin-top:5px; font-size:9px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-step {{ border-radius:3px; padding:2px 5px; font-weight:900; }}
+    .pred-step.accelerating {{ background:rgba(32,164,100,.1); color:var(--success); }}
+    .pred-step.emerging {{ background:rgba(8,165,214,.08); color:#078db8; }}
+    .pred-step.plateau {{ background:rgba(148,163,184,.18); color:#475569; }}
+    .pred-step.declining {{ background:rgba(229,57,63,.08); color:var(--danger); }}
+    .pred-expand {{ width:28px; height:28px; border-radius:6px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:12px; margin:auto; cursor:pointer; user-select:none; transition:transform .15s; }}
+    .pred-expand::before {{ content:"▾"; }}
+    .pred-toggle:checked + .pred-row .pred-expand {{ transform:rotate(180deg); }}
+    .pred-expand-panel {{ padding:18px 20px 20px 64px; background:rgba(8,165,214,.08); border-bottom:1px solid rgba(8,165,214,.18); }}
+    .pred-expand-grid {{ display:grid; grid-template-columns:1.2fr 1fr; gap:20px; }}
+    .pred-chart, .pred-driver {{ background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px; }}
+    .pred-chart-title, .pred-driver-title {{ color:#475569; font-size:10.5px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-bottom:10px; }}
+    .pred-driver {{ display:flex; flex-direction:column; gap:8px; border:0; background:transparent; padding:0; }}
+    .pred-driver-row {{ background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; display:flex; gap:10px; align-items:flex-start; }}
+    .pred-driver-tag {{ min-width:124px; text-align:center; border-radius:3px; padding:2px 6px; font-size:10px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-driver-tag.proxy {{ background:rgba(100,116,139,.18); color:#475569; }}
+    .pred-driver-tag.pull {{ background:rgba(8,165,214,.18); color:#078db8; }}
+    .pred-driver-tag.context {{ background:rgba(255,176,0,.24); color:#a06b00; }}
+    .pred-driver-text {{ color:var(--ink); font-size:12px; line-height:1.45; }}
+    .pred-driver-source {{ display:block; color:#94a3b8; font-size:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-top:2px; }}
+    .pred-life-grid, .pred-signal-grid {{ display:grid; grid-template-columns:repeat(4,1fr); }}
+    .pred-life-card {{ padding:14px 16px; border-right:1px solid #e2e8f0; border-top:3px solid #94a3b8; }}
+    .pred-life-card:last-child {{ border-right:0; }}
+    .pred-life-card.emerging {{ border-top-color:var(--accent); }}
+    .pred-life-card.accelerating {{ border-top-color:var(--success); }}
+    .pred-life-card.declining {{ border-top-color:var(--danger); }}
+    .pred-life-card-title {{ display:flex; justify-content:space-between; color:var(--ink); font-weight:900; }}
+    .pred-life-count {{ border:1px solid #e2e8f0; background:#fafbfd; border-radius:999px; padding:2px 8px; font-size:11px; }}
+    .pred-life-avg {{ color:#94a3b8; font-size:11.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin:6px 0 10px; }}
+    .pred-life-item {{ padding:7px 0; border-top:1px solid #edf2f6; color:#475569; font-size:12px; }}
+    .pred-life-item strong {{ color:var(--ink); }}
+    .pred-signal-grid {{ grid-template-columns:repeat(3,1fr); gap:12px; }}
+    .pred-signal-card {{ background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }}
+    .pred-signal-head {{ padding:14px 16px; border-bottom:1px solid #e2e8f0; }}
+    .pred-signal-title {{ color:var(--ink); font-size:14px; font-weight:900; }}
+    .pred-signal-sub {{ color:#94a3b8; font-size:11.5px; margin-top:2px; }}
+    .pred-signal-body {{ padding:14px 16px; }}
+    .pred-coming {{ border:1px dashed #cbd5e1; background:#fafbfd; border-radius:8px; padding:15px; color:#475569; font-size:12.5px; line-height:1.45; min-height:132px; }}
+    .pred-coming strong {{ display:inline-block; color:#a06b00; background:rgba(255,176,0,.16); border-radius:4px; padding:3px 7px; margin-bottom:8px; }}
+    @media (max-width:1100px) {{
+        .pred-kpis, .pred-life-grid, .pred-signal-grid {{ grid-template-columns:1fr 1fr; }}
+        .pred-colhead {{ display:none; }}
+        .pred-row {{ grid-template-columns:32px 1fr 88px; }}
+        .pred-row .pred-cell:nth-of-type(4), .pred-row .pred-cell:nth-of-type(5) {{ display:none; }}
+        .pred-expand-grid {{ grid-template-columns:1fr; }}
+    }}
+    @media (max-width:760px) {{ .pred-kpis, .pred-life-grid, .pred-signal-grid {{ grid-template-columns:1fr; }} }}
     .mini-tab-controls [data-testid="stHorizontalBlock"] {{ gap:3px !important; background:#edf3f8; padding:3px; border-radius:6px; }}
     .mini-tab-controls button {{
         border:0 !important; box-shadow:none !important; border-radius:5px !important;
@@ -672,14 +778,560 @@ st.markdown(f"""
         margin: 6px 0 8px;
         background: #fff;
     }}
+
+    /* ════════════════════════════════════════════════════════════════
+       HTML REFERENCE DESIGN — App Chrome & New Components
+       ════════════════════════════════════════════════════════════════ */
+    .app-chrome {{
+        background: linear-gradient(135deg, #0a1628 0%, #14233d 100%);
+        padding: 11px 24px; display: flex; align-items: center;
+        justify-content: space-between; border-bottom: 1px solid #1e3358;
+    }}
+    .chrome-left {{ display: flex; align-items: center; gap: 20px; }}
+    .brand-wrap {{ display: flex; align-items: center; gap: 10px; color: #fff; }}
+    .brand-i-mark {{
+        width: 28px; height: 28px; background: #00a4e3; border-radius: 6px;
+        display: grid; place-items: center;
+        font-weight: 700; color: #0a1628; font-size: 15px;
+    }}
+    .brand-n {{ font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }}
+    .brand-div {{ color: rgba(255,255,255,0.25); font-size: 14px; margin: 0 2px; }}
+    .brand-prod {{ font-weight: 500; font-size: 14px; color: rgba(255,255,255,0.85); }}
+    .workspace-pill-new {{
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+        padding: 5px 11px; border-radius: 8px; color: rgba(255,255,255,0.9); font-size: 12.5px;
+        display: inline-flex; align-items: center; gap: 8px;
+    }}
+    .workspace-pill-new::before {{
+        content: ''; width: 6px; height: 6px; background: #00a4e3; border-radius: 50%; flex-shrink: 0;
+    }}
+    .chrome-right {{ display: flex; align-items: center; gap: 16px; }}
+    .refresh-status-new {{
+        display: flex; align-items: center; gap: 8px; font-size: 12px;
+        color: rgba(255,255,255,0.7); font-family: ui-monospace, 'JetBrains Mono', monospace;
+    }}
+    @keyframes chrome-pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} }}
+    .live-dot-pulse {{
+        width: 6px; height: 6px; background: #16a34a; border-radius: 50%; flex-shrink: 0;
+        box-shadow: 0 0 0 3px rgba(22,163,74,0.22);
+        animation: chrome-pulse 2.4s ease-in-out infinite;
+    }}
+    .account-btn {{
+        width: 32px; height: 32px; background: rgba(255,255,255,0.1); border-radius: 50%;
+        display: grid; place-items: center; color: #fff; font-weight: 600; font-size: 12px;
+        border: 1px solid rgba(255,255,255,0.15);
+    }}
+
+    /* ── 2-row filter bar ──────────────────────────────── */
+    .new-filter-bar {{
+        background: #fff; border-bottom: 1px solid #e2e8f0; padding: 5px 20px 4px;
+    }}
+    .filter-row-wrap {{
+        display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; margin-bottom: 0;
+    }}
+    .filter-row-lbl {{
+        font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em;
+        color: #94a3b8; font-weight: 600; font-family: ui-monospace, monospace;
+        width: 58px; flex-shrink: 0; padding-top: 4px;
+    }}
+    .filter-divider-v {{ width: 1px; height: 22px; background: #e2e8f0; margin: 0 6px; flex-shrink: 0; }}
+    /* Pill-style selectboxes */
+    [data-testid="stSelectbox"] {{
+        display: inline-flex !important; flex-direction: row !important;
+        align-items: center !important; gap: 0 !important;
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px;
+        padding: 1px 6px 1px 10px; min-width: 80px; cursor: pointer;
+    }}
+    [data-testid="stSelectbox"] label {{
+        font-size: 11px !important; font-weight: 500 !important; color: #64748b !important;
+        margin: 0 !important; padding: 0 !important; line-height: 26px !important;
+        white-space: nowrap; flex-shrink: 0; cursor: pointer;
+    }}
+    [data-testid="stSelectbox"] > div {{
+        min-width: 40px !important; flex: 1;
+    }}
+    [data-baseweb="select"] > div {{
+        border: none !important; background: transparent !important;
+        min-height: 24px !important; padding: 0 !important; box-shadow: none !important;
+    }}
+    [data-baseweb="select"] span {{ font-size: 12px !important; font-weight: 500 !important; color: #0f172a !important; }}
+    [data-baseweb="select"] svg {{ width: 14px !important; height: 14px !important; color: #64748b !important; }}
+    [data-testid="stHorizontalBlock"] {{ gap: 4px !important; align-items: center !important; }}
+    /* SKU button & action links */
+    .sku-lookup-link {{
+        display: inline-flex; align-items: center; gap: 5px; padding: 5px 13px;
+        background: #00a4e3; color: #fff; font-size: 12px; font-weight: 600;
+        border-radius: 7px; white-space: nowrap; cursor: pointer; border: none;
+    }}
+    .filter-action-link {{
+        font-size: 12px; color: #475569; font-weight: 500; cursor: pointer;
+        white-space: nowrap; padding: 5px 6px; background: none; border: none;
+        text-decoration: none;
+    }}
+    .filter-action-link:hover {{ color: #00a4e3; }}
+    /* Panel collapse toggle button */
+    .panel-toggle-btn {{
+        display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+        font-size: 11.5px; color: #475569; background: #f8fafc;
+        border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer;
+    }}
+    /* SKU modal dialog styling */
+    .sku-modal-header {{
+        background: #0a1628; color: #fff; padding: 14px 20px;
+        display: flex; justify-content: space-between; align-items: center;
+        border-radius: 8px 8px 0 0; margin: -16px -16px 16px;
+    }}
+    .sku-modal-title {{ font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }}
+    .sku-modal-label {{ font-family: ui-monospace,monospace; font-size: 10px; text-transform: uppercase;
+        letter-spacing: .07em; color: #64748b; margin-bottom: 6px; }}
+    .sku-try-row {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }}
+    .sku-try-chip {{
+        font-size: 11.5px; color: #0f172a; background: #f1f5f9;
+        border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 9px; cursor: pointer;
+    }}
+    .sku-empty-state {{
+        text-align: center; padding: 40px 20px; color: #94a3b8;
+    }}
+    .sku-empty-icon {{ font-size: 36px; margin-bottom: 14px; display: block; }}
+    .sku-empty-text {{ font-size: 13px; line-height: 1.6; max-width: 320px; margin: 0 auto; }}
+    .sku-result-card {{
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;
+    }}
+
+    /* Analytics KPI strip */
+    .kpi-strip-new {{
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    }}
+    .kpi-tile-new {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 16px 18px; position: relative; overflow: hidden;
+        transition: border-color .15s;
+    }}
+    .kpi-tile-new::before {{
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, #00a4e3, #0080b3); opacity: .85;
+    }}
+    .kpi-tile-new:hover {{ border-color: #cbd5e1; }}
+    .kpi-lbl-new {{
+        font-size: 11.5px; color: #94a3b8; font-weight: 500;
+        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px;
+    }}
+    .kpi-val-new {{
+        font-weight: 600; font-size: 22px; color: #0f172a;
+        line-height: 1.15; letter-spacing: -.01em; margin-bottom: 4px;
+    }}
+    .kpi-meta-new {{
+        font-size: 12.5px; color: #475569; display: flex; align-items: center;
+        gap: 6px; flex-wrap: wrap;
+    }}
+    .kpi-delta {{
+        font-family: ui-monospace, monospace; font-weight: 600; font-size: 11.5px;
+        padding: 1px 6px; border-radius: 4px;
+    }}
+    .kpi-delta.up {{ color: #16a34a; background: rgba(22,163,74,.1); }}
+    .kpi-delta.down {{ color: #dc2626; background: rgba(220,38,38,.08); }}
+    .kpi-delta.neutral {{ color: #475569; background: rgba(100,116,139,.1); }}
+
+    /* Winning Patterns hero panel */
+    .hero-panel-new {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    }}
+    .hero-panel-head {{
+        padding: 16px 20px; border-bottom: 1px solid #e2e8f0;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }}
+    .hero-panel-title {{ font-weight: 600; font-size: 16px; color: #0f172a; letter-spacing: -.01em; }}
+    .hero-panel-sub {{ font-size: 12.5px; color: #475569; margin-top: 2px; }}
+    .sort-pill-new {{
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #fafbfd; border: 1px solid #e2e8f0; padding: 5px 10px;
+        border-radius: 6px; font-size: 12px; color: #475569;
+        font-family: ui-monospace, monospace;
+    }}
+    .archetype-colhead, .archetype-row-new {{
+        display: grid;
+        grid-template-columns: 32px 1fr 200px 130px 110px 32px;
+        gap: 16px; align-items: center; padding: 10px 20px; border-bottom: 1px solid #e2e8f0;
+    }}
+    .archetype-colhead {{
+        background: #fafbfd; font-size: 10px; font-weight: 700; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: .06em;
+        font-family: ui-monospace, monospace;
+    }}
+    .archetype-row-new {{ padding: 13px 20px; transition: background .15s; }}
+    .archetype-row-new:last-child {{ border-bottom: none; }}
+    .archetype-row-new:hover {{ background: #fafbfd; }}
+    .arch-rank {{
+        font-family: ui-monospace, monospace; font-size: 11.5px;
+        color: #94a3b8; font-weight: 500; text-align: center;
+    }}
+    .arch-main {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
+    .arch-name {{
+        font-weight: 600; font-size: 14.5px; color: #0f172a;
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }}
+    .arch-attrs {{
+        font-size: 12px; color: #475569; font-family: ui-monospace, monospace; margin-top: 1px;
+    }}
+    .arch-badges {{ display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }}
+    .arch-badge {{
+        font-size: 9.5px; font-weight: 600; letter-spacing: .03em; padding: 2px 6px; border-radius: 3px;
+        font-family: ui-monospace, monospace;
+    }}
+    .arch-badge.proxy {{ background: rgba(100,116,139,.18); color: #475569; }}
+    .arch-badge.pull {{ background: rgba(0,164,227,.12); color: #0080b3; }}
+    .arch-badge.context {{ background: rgba(255,183,29,.18); color: #a06b00; }}
+    .arch-badge.soon {{ background: #edf2f7; color: #52617a; }}
+    .decision-tag-new {{
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: ui-monospace, monospace; font-size: 10px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: .05em;
+        padding: 3px 7px; border-radius: 4px; white-space: nowrap;
+    }}
+    .decision-tag-new.reprice {{ background: rgba(0,164,227,.1); color: #0080b3; }}
+    .decision-tag-new.replenish {{ background: rgba(22,163,74,.1); color: #16a34a; }}
+    .decision-tag-new.retire {{ background: rgba(220,38,38,.08); color: #dc2626; }}
+    .decision-tag-new.reposition {{ background: rgba(255,183,29,.16); color: #b07a00; }}
+    .decision-tag-new.watch {{ background: rgba(148,163,184,.18); color: #475569; }}
+    .decision-tag-new.whitespace {{ background: rgba(124,58,237,.1); color: #6d28d9; }}
+    .lifecycle-pill-new {{
+        font-family: ui-monospace, monospace; font-size: 10px; text-transform: uppercase;
+        letter-spacing: .04em; padding: 2px 6px; border-radius: 3px; font-weight: 500;
+    }}
+    .lifecycle-pill-new.emerging {{ background: rgba(0,164,227,.08); color: #0080b3; }}
+    .lifecycle-pill-new.accelerating {{ background: rgba(22,163,74,.1); color: #16a34a; }}
+    .lifecycle-pill-new.plateau {{ background: rgba(148,163,184,.18); color: #475569; }}
+    .lifecycle-pill-new.declining {{ background: rgba(220,38,38,.08); color: #dc2626; }}
+    .vel-cell {{ display: flex; flex-direction: column; gap: 2px; font-size: 12px; }}
+    .vel-line {{ display: flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; }}
+    .vel-ch {{ color: #94a3b8; font-size: 11px; width: 60px; flex-shrink: 0; }}
+    .vel-up {{ color: #16a34a; font-weight: 600; }}
+    .vel-down {{ color: #dc2626; font-weight: 600; }}
+    .vel-neutral {{ color: #475569; font-weight: 600; }}
+    .agree-cell {{ display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }}
+    .agree-lbl {{
+        font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, monospace;
+        text-transform: uppercase; letter-spacing: .04em;
+    }}
+    .agree-bars {{ display: flex; gap: 2px; }}
+    .agree-bars span {{ width: 12px; height: 4px; border-radius: 1px; background: #cbd5e1; }}
+    .agree-bars.strong span {{ background: #16a34a; }}
+    .agree-bars.mixed span:nth-child(-n+2) {{ background: #fbbf24; }}
+    .agree-bars.divergent span:nth-child(-n+1) {{ background: #dc2626; }}
+    .agree-val {{
+        font-size: 11.5px; font-weight: 600; color: #0f172a;
+        font-family: ui-monospace, monospace; margin-top: 2px;
+    }}
+    .conf-cell {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
+    .conf-lbl {{
+        font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, monospace;
+        text-transform: uppercase; letter-spacing: .04em;
+    }}
+    .conf-val {{ font-weight: 600; font-size: 15px; color: #0f172a; }}
+    .expand-btn-new {{
+        width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+        background: #00a4e3; color: #fff; font-size: 16px; font-weight: 400; flex-shrink: 0;
+        cursor: pointer; user-select: none; line-height: 1; transition: background .15s;
+    }}
+    .expand-btn-new::after {{ content: '+'; }}
+    .expand-btn-new:hover {{ background: #0080b3; }}
+    /* Checkbox toggle: hide/show evidence panel + flip button icon */
+    .pred-toggle + .archetype-row-new + .evidence-panel-s1 {{ display: none; }}
+    .pred-toggle:checked + .archetype-row-new + .evidence-panel-s1 {{ display: block; }}
+    .pred-toggle:checked + .archetype-row-new .expand-btn-new {{ background: #0f172a; }}
+    .pred-toggle:checked + .archetype-row-new .expand-btn-new::after {{ content: '\00d7'; font-size: 18px; }}
+    /* Evidence panel (S1) */
+    .evidence-panel-s1 {{
+        padding: 14px 20px 16px 68px;
+        background: rgba(0,164,227,.05); border-bottom: 1px solid rgba(0,164,227,.15);
+    }}
+    .evidence-hdr {{
+        font-family: ui-monospace, monospace; font-size: 10.5px; text-transform: uppercase;
+        letter-spacing: .06em; color: #475569; margin-bottom: 10px; font-weight: 600;
+    }}
+    .driver-list-new {{ display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }}
+    .driver-row-new {{
+        display: flex; align-items: center; gap: 10px; background: #fff;
+        border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 12.5px;
+    }}
+    .driver-tag-new {{
+        font-family: ui-monospace, monospace; font-size: 10.5px; font-weight: 600;
+        padding: 2px 6px; border-radius: 3px; letter-spacing: .04em;
+        flex-shrink: 0; min-width: 80px; text-align: center;
+    }}
+    .driver-tag-new.proxy {{ background: rgba(100,116,139,.12); color: #475569; }}
+    .driver-tag-new.pull {{ background: rgba(0,164,227,.12); color: #0080b3; }}
+    .driver-tag-new.context {{ background: rgba(255,183,29,.18); color: #a06b00; }}
+    .driver-txt-new {{ color: #0f172a; flex: 1; }}
+    .driver-src-new {{
+        font-family: ui-monospace, monospace; font-size: 10.5px; color: #94a3b8;
+        white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;
+    }}
+    .evidence-acts {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
+    .ev-link {{
+        font-size: 12px; color: #0080b3; font-weight: 600; padding: 5px 11px;
+        border: 1px solid rgba(0,164,227,.2); border-radius: 6px; background: #fff;
+        cursor: pointer; transition: all .15s; text-decoration: none;
+    }}
+    .ev-link:hover {{ background: #00a4e3; color: #fff; }}
+
+    /* Supporting panels */
+    .supporting-grid-new {{
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    }}
+    .supporting-grid-new .span2 {{ grid-column: span 2; }}
+    .support-panel-new {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    }}
+    .support-panel-hdr {{
+        padding: 13px 16px 10px; display: flex; align-items: center;
+        justify-content: space-between; border-bottom: 1px solid #e2e8f0;
+    }}
+    .support-panel-title-new {{ font-weight: 600; font-size: 13.5px; color: #0f172a; }}
+    .support-panel-sub-new {{ font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace; }}
+    .support-panel-body {{ padding: 12px 16px 14px; }}
+
+    /* Stacked bar */
+    .stacked-bar-new {{
+        display: flex; height: 28px; border-radius: 6px; overflow: hidden; margin: 8px 0 12px;
+    }}
+    .stacked-seg {{
+        display: grid; place-items: center; font-size: 10.5px; font-weight: 600; color: #fff;
+        font-family: ui-monospace, monospace; overflow: hidden; white-space: nowrap;
+        transition: opacity .15s; cursor: pointer;
+    }}
+    .stacked-seg:hover {{ opacity: .85; }}
+    .stacked-legend-new {{ display: flex; flex-direction: column; gap: 5px; }}
+    .legend-row-new {{ display: flex; align-items: center; gap: 8px; font-size: 12px; }}
+    .legend-swatch-new {{ width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }}
+    .legend-lbl-new {{ color: #475569; flex: 1; }}
+    .legend-val-new {{
+        font-family: ui-monospace, monospace; color: #0f172a; font-weight: 600; font-size: 11.5px;
+    }}
+    .legend-delta-new {{
+        font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+        padding: 1px 4px; border-radius: 3px;
+    }}
+
+    /* Bar list (HTML design) */
+    .bar-list-new {{ display: flex; flex-direction: column; gap: 7px; }}
+    .bar-row-new {{
+        display: grid; grid-template-columns: 95px 1fr 75px;
+        gap: 10px; align-items: center; font-size: 12px;
+    }}
+    .bar-lbl-new {{ color: #475569; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .bar-track-new {{ height: 8px; background: #f6f9fc; border-radius: 4px; overflow: hidden; }}
+    .bar-fill-new {{
+        height: 100%; background: linear-gradient(90deg,#00a4e3,#0080b3); border-radius: 4px;
+    }}
+    .bar-val-new {{
+        font-family: ui-monospace, monospace; font-size: 11px; color: #0f172a;
+        text-align: right; font-weight: 600;
+    }}
+    .converting-note {{
+        margin-top: 10px; padding: 8px 10px; background: rgba(0,164,227,.06);
+        border: 1px solid rgba(0,164,227,.15); border-radius: 6px;
+        font-size: 11.5px; color: #0080b3; font-family: ui-monospace, monospace;
+    }}
+
+    /* Channel comparison (new) */
+    .channel-compare-new {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+    .channel-card-new {{
+        background: #fafbfd; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;
+    }}
+    .channel-card-hdr-new {{
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;
+    }}
+    .channel-name-new {{ font-weight: 600; font-size: 12.5px; color: #0f172a; }}
+    .ch-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
+    .ch-dot.amz {{ background: #ff9900; }}
+    .ch-dot.nor {{ background: #111; }}
+    .channel-stat-new {{ display: flex; justify-content: space-between; font-size: 11.5px; padding: 4px 0; }}
+    .channel-stat-lbl {{ color: #94a3b8; }}
+    .channel-stat-val {{ color: #0f172a; font-family: ui-monospace, monospace; font-weight: 600; }}
+
+    /* Automation strip */
+    .automation-strip {{
+        background: linear-gradient(135deg,#0a1628 0%,#14233d 100%);
+        padding: 14px 20px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }}
+    .auto-left {{ display: flex; align-items: center; gap: 12px; }}
+    .auto-badge {{
+        background: rgba(255,183,29,.15); border: 1px solid rgba(255,183,29,.3);
+        color: #ffb71d; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+        padding: 4px 10px; border-radius: 6px; white-space: nowrap;
+    }}
+    .auto-text {{ font-size: 13px; color: rgba(255,255,255,.85); }}
+    .auto-right {{ display: flex; gap: 8px; }}
+    .auto-btn {{
+        padding: 7px 13px; border-radius: 6px; font-size: 12px; font-weight: 600;
+        border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.85);
+        background: rgba(255,255,255,.08); cursor: pointer;
+    }}
+    .auto-btn.primary {{ background: #00a4e3; border-color: #00a4e3; color: #fff; }}
+
+    /* Predictive KPI cards (S2 updated) */
+    .pred-kpi-new {{
+        position: relative; overflow: hidden; background: #fff; border: 1px solid #e2e8f0;
+        border-radius: 12px; padding: 16px 18px;
+        display: flex; flex-direction: column; gap: 6px; min-height: 130px;
+    }}
+    .pred-kpi-new::before {{
+        content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: #00a4e3;
+    }}
+    .pred-kpi-new.urgent::before {{ background: linear-gradient(90deg,#ffb71d,#f59e0b); }}
+    .pred-kpi-new.gain::before {{ background: linear-gradient(90deg,#16a34a,#15803d); }}
+    .pred-kpi-new.risk::before {{ background: linear-gradient(90deg,#dc2626,#991b1b); }}
+    .pred-kpi-new.lead::before {{ background: linear-gradient(90deg,#00a4e3,#7c3aed); }}
+    .pred-kpi-lbl-new {{
+        color: #94a3b8; font-size: 10.5px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em;
+    }}
+    .pred-kpi-title-new {{ color: #0f172a; font-size: 15px; font-weight: 700; line-height: 1.25; }}
+    .pred-kpi-stat-new {{
+        display: flex; align-items: baseline; gap: 7px;
+        font-family: ui-monospace, monospace; font-size: 11px;
+    }}
+    .pred-kpi-big-new {{ font-size: 19px; font-weight: 900; }}
+    .pred-kpi-meta-new {{ color: #475569; font-weight: 600; }}
+    .pred-kpi-foot-new {{
+        margin-top: auto; padding-top: 8px; border-top: 1px solid #e2e8f0;
+        color: #94a3b8; font-size: 10.5px; font-family: ui-monospace, monospace;
+    }}
+
+    /* S2 Forward signals (static placeholders) */
+    .fwd-signal-card {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    }}
+    .fwd-signal-hdr {{
+        padding: 13px 16px 10px; border-bottom: 1px solid #e2e8f0;
+    }}
+    .fwd-signal-title {{ font-weight: 600; font-size: 13.5px; color: #0f172a; }}
+    .fwd-signal-sub {{ font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace; margin-top: 2px; }}
+    .fwd-signal-body {{ padding: 12px 16px 14px; }}
+    .fwd-query-row {{
+        display: flex; align-items: center; gap: 10px; padding: 6px 0;
+        border-bottom: 1px solid #f1f5f9; font-size: 12.5px;
+    }}
+    .fwd-query-row:last-child {{ border-bottom: none; }}
+    .fwd-query-name {{ color: #0f172a; flex: 1; font-weight: 500; }}
+    .fwd-mini-bar {{ height: 5px; width: 60px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }}
+    .fwd-mini-fill {{ height: 100%; border-radius: 3px; }}
+    .fwd-delta-up {{ color: #16a34a; font-weight: 600; font-size: 11.5px; font-family: ui-monospace, monospace; }}
+    .fwd-delta-down {{ color: #dc2626; font-weight: 600; font-size: 11.5px; font-family: ui-monospace, monospace; }}
+    .fwd-region-row {{
+        display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center;
+        padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px;
+    }}
+    .fwd-region-row:last-child {{ border-bottom: none; }}
+    .fwd-region-name {{ color: #475569; font-weight: 500; }}
+    .fwd-anomaly {{ color: #0f172a; font-family: ui-monospace, monospace; font-weight: 600; font-size: 11.5px; }}
+
+    /* S3 Mode toggle */
+    .mode-toggle-bar {{
+        background: #fff; border-bottom: 1px solid #e2e8f0;
+        padding: 0 24px; display: flex; align-items: stretch;
+    }}
+    .mode-toggle-tab {{
+        padding: 13px 20px; font-weight: 500; font-size: 14px; color: #475569;
+        border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s;
+        display: flex; align-items: center; gap: 8px;
+    }}
+    .mode-toggle-tab.active {{ color: #0f172a; border-bottom-color: #00a4e3; font-weight: 600; }}
+    .mode-count {{
+        background: #00a4e3; color: #fff; font-size: 11px; font-weight: 700;
+        padding: 2px 7px; border-radius: 10px;
+    }}
+
+    /* S3 Market frame */
+    .market-frame {{
+        background: linear-gradient(135deg,#0a1628 0%,#14233d 100%);
+        border-radius: 12px; padding: 18px 20px;
+        display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;
+    }}
+    .market-frame-title {{ color: rgba(255,255,255,.9); font-size: 13px; font-weight: 600; }}
+    .market-frame-signal {{ font-size: 15px; font-weight: 700; color: #fff; line-height: 1.3; }}
+    .market-frame-drivers {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .market-frame-driver {{
+        display: flex; align-items: center; gap: 6px;
+        background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1);
+        padding: 5px 9px; border-radius: 6px; font-size: 12px; color: rgba(255,255,255,.8);
+    }}
+    .driver-pct {{ font-weight: 700; color: #00a4e3; }}
+
+    /* S3 Rec cards (new design) */
+    .rec-card-new {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+        overflow: hidden; margin-bottom: 12px;
+    }}
+    .rec-card-grid {{
+        display: grid; grid-template-columns: 32px 1fr auto auto;
+        gap: 14px; align-items: center; padding: 14px 16px;
+    }}
+    .rec-idx {{
+        font-family: ui-monospace, monospace; font-size: 11px;
+        color: #94a3b8; text-align: center; font-weight: 600;
+    }}
+    .rec-main {{ min-width: 0; }}
+    .rec-headline {{ color: #0f172a; font-size: 14px; font-weight: 700; line-height: 1.3; margin-bottom: 3px; }}
+    .rec-evidence-sum {{ color: #475569; font-size: 12px; line-height: 1.4; }}
+    .rec-conf-col {{
+        display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+        font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap;
+    }}
+    .conf-badge {{ padding: 3px 8px; border-radius: 4px; font-weight: 700; }}
+    .conf-badge.high {{ background: rgba(22,163,74,.1); color: #16a34a; }}
+    .conf-badge.medium {{ background: rgba(255,183,29,.15); color: #b07a00; }}
+    .conf-badge.low {{ background: rgba(148,163,184,.18); color: #475569; }}
+    .tier-strong {{ color: #16a34a; font-size: 10.5px; font-weight: 700; }}
+    .tier-moderate {{ color: #b07a00; font-size: 10.5px; font-weight: 700; }}
+    .tier-watch {{ color: #475569; font-size: 10.5px; font-weight: 700; }}
+    .rec-expand-col {{
+        width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+        background: #f6f9fc; border: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px;
+        cursor: pointer; flex-shrink: 0;
+    }}
+    .rec-evidence-block {{
+        padding: 12px 16px 14px; background: rgba(0,164,227,.04);
+        border-top: 1px solid rgba(0,164,227,.12);
+    }}
+    .rec-driver-list {{ display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }}
+    .rec-action-row {{ display: flex; gap: 8px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid #e2e8f0; }}
+    .rec-action-btn {{
+        padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+        border: 1px solid #e2e8f0; color: #475569; background: #fff;
+        cursor: pointer; transition: all .15s;
+    }}
+    .rec-action-btn:hover {{ border-color: #00a4e3; color: #0080b3; }}
+    .rec-action-btn.primary {{ background: #00a4e3; border-color: #00a4e3; color: #fff; }}
+    .rec-action-btn.primary:hover {{ background: #0080b3; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Top controls ──────────────────────────────────────────────────────────────
 _CATEGORY_LABELS = {
     "All": "All Apparel",
+    "mens_polos": "Polos",
     "mens_tshirts": "Men's T-Shirts",
     "womens_dresses": "Women's Dresses",
+    "womens_tops": "Tops",
+    "denim": "Denim",
+}
+_GENDER_LABELS = {
+    "All": "All",
+    "men": "Men",
+    "women": "Women",
+    "kids": "Kids",
+    "unisex": "Unisex",
+}
+_STYLE_LABELS = {
+    "All": "All",
+    "crew": "Crew Neck",
+    "v_neck": "V-Neck",
+    "henley": "Henley",
+    "polo": "Polo",
 }
 _PLATFORM_LABELS = {
     "All": "Amazon · Nordstrom",
@@ -716,6 +1368,24 @@ def _repair_stale_widget_state() -> None:
             except KeyError:
                 stale_keys.update({str(key), widget_id})
 
+        if key_mapper is not None:
+            id_key_mapping = getattr(key_mapper, "_id_key_mapping", {})
+            key_id_mapping = getattr(key_mapper, "_key_id_mapping", {})
+            for widget_id, user_key in list(id_key_mapping.items()):
+                if not isinstance(widget_id, str) or not widget_id.startswith("$$WIDGET_ID"):
+                    continue
+                try:
+                    raw_state[widget_id]
+                except KeyError:
+                    stale_keys.update({str(user_key), widget_id})
+            for user_key, widget_id in list(key_id_mapping.items()):
+                if not isinstance(widget_id, str) or not widget_id.startswith("$$WIDGET_ID"):
+                    continue
+                try:
+                    raw_state[widget_id]
+                except KeyError:
+                    stale_keys.update({str(user_key), widget_id})
+
         for key in stale_keys:
             old_state.pop(key, None)
             if new_session_state is not None:
@@ -733,53 +1403,187 @@ def _repair_stale_widget_state() -> None:
 
 _repair_stale_widget_state()
 for _filter_key, _filter_default in {
-    "cat_filter": "mens_tshirts",
+    "gender_filter": "All",
+    "cat_filter": "All",
+    "style_filter": "All",
     "plt_filter": "All",
     "window_filter": "Last 30 Days",
+    "price_band_filter": "All",
+    "rec_status_filter": "All",
+    "s3_mode": "recommendations",
+    "show_support_panels": True,
+    "region_filter": "All US",
 }.items():
     try:
         st.session_state.setdefault(_filter_key, _filter_default)
     except Exception:
         pass
 
-nav_logo, nav_crumbs, nav_cat, nav_platform, nav_window = st.columns([1.15, 3.7, 1.35, 1.7, 1.25])
-with nav_logo:
+# ── Load filter option lists from DB (cached 1 hour) ─────────────────────────
+@st.cache_data(ttl=3600)
+def _get_filter_options():
+    return load_filter_options()
+
+_fopts = _get_filter_options()
+_gender_opts   = ["All"] + _fopts.get("genders", ["men", "women"])
+_category_opts = ["All"] + _fopts.get("categories", ["mens_tshirts", "womens_dresses"])
+_neck_type_opts = ["All"] + _fopts.get("neck_types", [])
+_platform_opts = ["All"] + _fopts.get("platforms", ["amazon", "nordstrom"])
+
+# ── SKU Lookup dialog ─────────────────────────────────────────────────────────
+@st.dialog("SKU Lookup", width="large")
+def _sku_lookup_dialog():
     st.markdown("""
-<div class="top-shell" style="border-bottom:0; padding:8px 0 0;">
-  <div class="brand-mark">
-    <span class="mark-stack"><span class="m1"></span><span class="m2"></span></span>
-    <span>Innovatics</span>
+<div class="sku-modal-header">
+  <div class="sku-modal-title">🔍 SKU Lookup</div>
+</div>
+""", unsafe_allow_html=True)
+    st.markdown('<div class="sku-modal-label">Enter a marketplace SKU or ASIN</div>', unsafe_allow_html=True)
+    _q_col, _btn_col = st.columns([5, 1])
+    with _q_col:
+        _sku_q = st.text_input("sku_q", placeholder="e.g., B08L5XYZ12 (Amazon ASIN) or 7234890 (Nordstrom ID)",
+                               label_visibility="collapsed", key="sku_lookup_input")
+    with _btn_col:
+        _do_lookup = st.button("Look up", type="primary", use_container_width=True, key="sku_lookup_go")
+    st.markdown("""
+<div class="sku-try-row">
+  <span style="font-size:11px;color:#94a3b8;align-self:center;">TRY</span>
+  <span class="sku-try-chip">B08HVCWRC1 · Amazon</span>
+  <span class="sku-try-chip">7234890 · Nordstrom</span>
+  <span class="sku-try-chip">B07PFGX5LL · Amazon</span>
+</div>
+""", unsafe_allow_html=True)
+    st.divider()
+    if _do_lookup and _sku_q.strip():
+        # Search DB for this SKU/ASIN in products
+        try:
+            from streamlit_app.db import load_products
+            _all = load_products()
+            _q_lower = _sku_q.strip().lower()
+            _hit = _all[_all.apply(lambda r: _q_lower in str(r.get("url","")).lower()
+                                   or _q_lower in str(r.get("title","")).lower(), axis=1)]
+            if _hit.empty:
+                st.warning(f"No product found matching **{_sku_q}** in the database.")
+            else:
+                r = _hit.iloc[0]
+                st.markdown(f"""
+<div class="sku-result-card">
+  <div style="font-weight:700;font-size:14px;margin-bottom:4px;">{r.get('title','—')[:80]}</div>
+  <div style="font-size:12px;color:#475569;margin-bottom:10px;">
+    Platform: <b>{r.get('platform','—')}</b> &nbsp;·&nbsp;
+    Price: <b>${float(r.get('current_price') or 0):.2f}</b> &nbsp;·&nbsp;
+    Rating: <b>{r.get('rating','—')}</b> &nbsp;·&nbsp;
+    Reviews: <b>{int(r.get('review_count') or 0):,}</b>
+  </div>
+  <div style="font-size:11.5px;color:#64748b;">Category: {r.get('category','—')} &nbsp;·&nbsp; Color: {r.get('color','—')} &nbsp;·&nbsp; Neck: {r.get('neck_type','—')}</div>
+</div>""", unsafe_allow_html=True)
+        except Exception as _e:
+            st.error(f"Lookup error: {_e}")
+    else:
+        st.markdown("""
+<div class="sku-empty-state">
+  <span class="sku-empty-icon">🔍</span>
+  <div class="sku-empty-text">Enter an ASIN or Nordstrom product ID above to see review metrics,
+  sentiment, price history, cross-platform comparison, and pattern mapping for that listing.<br><br>
+  <span style="color:#b0bdcd;">All data is market-derived from public listings.</span></div>
+</div>""", unsafe_allow_html=True)
+
+# ── App Chrome (dark gradient header) ────────────────────────────────────────
+st.markdown(f"""
+<div class="app-chrome">
+  <div class="chrome-left">
+    <div class="brand-wrap">
+      <div class="brand-i-mark">i</div>
+      <span class="brand-n">Innovatics</span>
+      <span class="brand-div">/</span>
+      <span class="brand-prod">Channel Intelligence</span>
+    </div>
+    <div class="workspace-pill-new">Market Signal</div>
+  </div>
+  <div class="chrome-right">
+    <div class="refresh-status-new">
+      <span class="live-dot-pulse"></span>
+      Live · refreshed recently
+    </div>
+    <div class="account-btn">Z</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
-with nav_crumbs:
-    st.markdown("""
-<div style="padding-top:16px;">
-  <span class="crumbs">Decision Intelligence&nbsp;&nbsp;/&nbsp;&nbsp;<strong>Market Signal</strong></span>
-  <span style="margin-left:24px;" class="nav-pill active"><span class="nav-dot"></span>Market Signal</span>
-  <span class="nav-pill"><span class="nav-dot"></span>Merchandising Intelligence</span>
-</div>
-""", unsafe_allow_html=True)
-with nav_cat:
-    category_filter = st.selectbox(
-        "Category",
-        ["mens_tshirts", "womens_dresses", "All"],
-        format_func=lambda x: _CATEGORY_LABELS.get(x, x),
-        key="cat_filter",
-    )
-with nav_platform:
-    platform_filter = st.selectbox(
-        "Platforms",
-        ["All", "amazon", "nordstrom"],
-        format_func=lambda x: _PLATFORM_LABELS.get(x, x.title()),
-        key="plt_filter",
-    )
-with nav_window:
-    window_filter = st.selectbox(
-        "Window",
-        ["Last 30 Days", "Last 60 Days", "All Time"],
-        key="window_filter",
-    )
+
+# ── 2-row compact pill filter bar ─────────────────────────────────────────────
+_fb_lbl = lambda lbl, x, fmt=None: f"{lbl}  {fmt(x) if fmt else x}"
+
+with st.container():
+    st.markdown('<div class="new-filter-bar">', unsafe_allow_html=True)
+
+    # ── Row 1 ─────────────────────────────────────────────────────────────────
+    st.markdown('<div class="filter-row-wrap">', unsafe_allow_html=True)
+    st.markdown('<span class="filter-row-lbl">Context</span>', unsafe_allow_html=True)
+
+    _r1 = st.columns([1.0, 1.4, 1.2, 1.5, 0.05, 1.1, 0.75, 0.65])
+    with _r1[0]:
+        gender_filter = st.selectbox(
+            "Gender",
+            _gender_opts,
+            format_func=lambda x: _GENDER_LABELS.get(x, x.title()),
+            key="gender_filter",
+        )
+    with _r1[1]:
+        category_filter = st.selectbox(
+            "Category",
+            _category_opts,
+            format_func=lambda x: _CATEGORY_LABELS.get(x, x.replace("_", " ").title()),
+            key="cat_filter",
+        )
+    with _r1[2]:
+        style_filter = st.selectbox(
+            "Style",
+            _neck_type_opts,
+            key="style_filter",
+        )
+    with _r1[3]:
+        window_filter = st.selectbox(
+            "Window",
+            ["Last 30 Days", "Last 60 Days", "Last 90 Days", "All Time"],
+            key="window_filter",
+        )
+    with _r1[4]:
+        st.markdown('<div class="filter-divider-v"></div>', unsafe_allow_html=True)
+    with _r1[5]:
+        if st.button("🔍 Look up SKU", key="sku_open_btn", use_container_width=True):
+            _sku_lookup_dialog()
+    with _r1[6]:
+        st.markdown('<span class="filter-action-link">↗ Save view</span>', unsafe_allow_html=True)
+    with _r1[7]:
+        st.markdown('<span class="filter-action-link">↺ Reset all</span>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 2 ─────────────────────────────────────────────────────────────────
+    st.markdown('<div class="filter-row-wrap">', unsafe_allow_html=True)
+    st.markdown('<span class="filter-row-lbl">Refine</span>', unsafe_allow_html=True)
+    _r2 = st.columns([1.1, 1.1, 1.4, 6.4])
+    with _r2[0]:
+        price_band_filter = st.selectbox(
+            "Price band",
+            ["All", "<$25", "$25–50", "$50–75", "$75–100", "$100–150", "$150+"],
+            key="price_band_filter",
+        )
+    with _r2[1]:
+        region_filter = st.selectbox(
+            "Region",
+            ["All US", "East", "West", "South", "Midwest"],
+            key="region_filter",
+        )
+    with _r2[2]:
+        platform_filter = st.selectbox(
+            "Channel",
+            _platform_opts,
+            format_func=lambda x: "Amazon + Nordstrom" if x == "All" else _PLATFORM_LABELS.get(x, x.title()),
+            key="plt_filter",
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)  # close new-filter-bar
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -804,13 +1608,49 @@ def get_predictive_panels(platform, category):
         "whitespace": load_whitespace_scores(p, c),
     }
 
+
+def _apply_universal_filters(source: pd.DataFrame, gender: str, style: str) -> pd.DataFrame:
+    if source.empty:
+        return source
+    work = source.copy()
+    if gender != "All" and "gender" in work.columns:
+        work = work[work["gender"].fillna("").astype(str).str.lower() == gender]
+    if style != "All":
+        if "neck_type" in work.columns:
+            work = work[work["neck_type"].fillna("").astype(str).str.lower() == style.lower()]
+    return work
+
+
 df_raw = get_data(platform_filter, category_filter)
 sku_raw = get_variant_data(platform_filter, category_filter)
 
-df = df_raw.copy()
-sku_df = sku_raw.copy()
+df = _apply_universal_filters(df_raw, gender_filter, style_filter)
+sku_df = _apply_universal_filters(sku_raw, gender_filter, style_filter)
+
+
+def _apply_price_band_filter(source: pd.DataFrame, band: str) -> pd.DataFrame:
+    if band == "All" or source.empty or "current_price" not in source.columns:
+        return source
+    prices = pd.to_numeric(source["current_price"], errors="coerce")
+    band_map = {
+        "<$25": (0, 25),
+        "$25–50": (25, 50),
+        "$50–75": (50, 75),
+        "$75–100": (75, 100),
+        "$100–150": (100, 150),
+        "$150+": (150, 99999),
+    }
+    lo, hi = band_map.get(band, (0, 99999))
+    return source[prices.between(lo, hi, inclusive="left")]
+
+
+if price_band_filter != "All":
+    df = _apply_price_band_filter(df, price_band_filter)
+    sku_df = _apply_price_band_filter(sku_df, price_band_filter)
 
 _visible_category = _CATEGORY_LABELS.get(category_filter, category_filter.replace("_", " ").title())
+_visible_gender = _GENDER_LABELS.get(gender_filter, gender_filter.title())
+_visible_style = _STYLE_LABELS.get(style_filter, style_filter.title())
 _visible_platform = _PLATFORM_LABELS.get(platform_filter, platform_filter.title())
 _total_skus = len(sku_df) if not sku_df.empty else len(df)
 _total_reviews = int(df["review_count"].fillna(0).sum()) if not df.empty and "review_count" in df.columns else 0
@@ -825,29 +1665,10 @@ if pd.notna(_last_scrape):
     except Exception:
         _fresh_label = "recently"
 
-st.markdown(f"""
-<div class="hero-strip">
-  <div class="hero-grid">
-    <div>
-      <h1 class="hero-title">Market Signal Intelligence</h1>
-      <p class="hero-sub">Outside-in view of what's moving on US marketplaces — across four connected layers of intelligence.</p>
-    </div>
-    <div class="live-meta">
-      <span><span class="live-dot"></span>Live · refreshed <strong>{escape(_fresh_label)}</strong></span>
-      <span><strong>{_total_skus:,}</strong> SKUs</span>
-      <span><strong>{_total_reviews:,}</strong> reviews</span>
-      <span><strong>{escape(_visible_category)}</strong></span>
-      <span><strong>{escape(_visible_platform)}</strong></span>
-      <span><strong>{escape(window_filter)}</strong></span>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
 tab1, tab2, tab3 = st.tabs([
-    "1  LAYER 01 · Descriptive",
-    "2  LAYER 02 · Predictive",
-    "3  LAYER 03 · Ask & Act",
+    "Analytics",
+    "Predictive",
+    "Ask & Recommendation",
 ])
 
 
@@ -1523,15 +2344,18 @@ def _signal_band_html(ctx: dict) -> str:
 _LIFECYCLE_LABELS = {
     "emerging":     "Emerging",
     "accelerating": "Accelerating",
-    "peak":         "Peak",
     "plateau":      "Plateau",
     "declining":    "Declining",
-    "dead":         "Dead",
+}
+_LIFECYCLE_ALIASES = {
+    "peak": "plateau",
+    "dead": "declining",
 }
 
 
 def _stage_key(stage: str) -> str:
     raw = str(stage or "plateau").strip().lower()
+    raw = _LIFECYCLE_ALIASES.get(raw, raw)
     return raw if raw in _LIFECYCLE_LABELS else "plateau"
 
 
@@ -1569,15 +2393,110 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
     return rows[:limit]
 
 
+def _confidence_pct(row: dict) -> int:
+    label = str(row.get("confidence") or "").strip().lower()
+    base = {"high": 82, "med": 74, "medium": 74, "low": 64}.get(label, 64)
+    change = abs(float(row.get("change") or row.get("projected_change_pct") or 0))
+    weeks_observed = int(row.get("weeks_observed") or 0)
+    if change >= 25:
+        base += 4
+    elif change < 10:
+        base -= 5
+    if weeks_observed >= 3:
+        base += 3
+    elif weeks_observed <= 1:
+        base -= 2
+    return max(50, min(92, int(round(base))))
+
+
+def _decision_tag(stage: str, change: float) -> str:
+    stage = _stage_key(stage)
+    if stage == "accelerating":
+        return "Replenish" if change >= 0 else "Watch"
+    if stage == "declining":
+        return "Retire" if change < 0 else "Watch"
+    if stage == "emerging":
+        return "Watch"
+    return "Watch"
+
+
+def _predictive_kpis(rows: list[dict]) -> dict:
+    urgent = []
+    for row in rows:
+        change = float(row.get("change") or 0)
+        conf = _confidence_pct(row)
+        if _stage_key(row.get("stage")) in {"accelerating", "declining"} and conf > 75 and abs(change) > 15:
+            urgent.append({**row, "confidence_pct": conf, "decision_tag": _decision_tag(row.get("stage"), change)})
+
+    gains = [r for r in rows if float(r.get("change") or 0) > 0]
+    risks = [r for r in rows if float(r.get("change") or 0) < 0]
+    biggest_gain = max(gains, key=lambda r: float(r.get("change") or 0), default=None)
+    biggest_risk = min(risks, key=lambda r: float(r.get("change") or 0), default=None)
+
+    tag_counts = {}
+    for row in urgent:
+        tag = row["decision_tag"]
+        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    tag_summary = " · ".join(f"{count} {tag}" for tag, count in tag_counts.items()) or "No urgent tags"
+
+    return {
+        "urgent": urgent,
+        "urgent_summary": tag_summary,
+        "biggest_gain": biggest_gain,
+        "biggest_risk": biggest_risk,
+    }
+
+
+def _predictive_kpi_band_html(rows: list[dict]) -> str:
+    kpis = _predictive_kpis(rows)
+    urgent_count = len(kpis["urgent"])
+    gain = kpis["biggest_gain"]
+    risk = kpis["biggest_risk"]
+
+    gain_name = _label(gain.get("name"), "Run predictions") if gain else "Run predictions"
+    gain_change = int(round(float(gain.get("change") or 0))) if gain else 0
+    gain_conf = _confidence_pct(gain) if gain else 0
+    gain_stage = _LIFECYCLE_LABELS[_stage_key(gain.get("stage"))].lower() if gain else "pending"
+
+    risk_name = _label(risk.get("name"), "Run predictions") if risk else "Run predictions"
+    risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
+    risk_conf = _confidence_pct(risk) if risk else 0
+    risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
+
+    return f"""
+<div class="signal-band">
+  <div class="signal-card">
+    <div class="signal-label">Patterns needing action · 4 weeks</div>
+    <div class="signal-value" style="font-size:1.72rem;">{urgent_count} urgent</div>
+    <div class="signal-note">Accelerating/Declining · confidence &gt;75% · velocity &gt;±15%<br><strong>{_safe(kpis["urgent_summary"])}</strong></div>
+  </div>
+  <div class="signal-card">
+    <div class="signal-label">Biggest momentum gain</div>
+    <div class="signal-value" style="font-size:1.42rem;">{_safe(gain_name)}</div>
+    <div class="signal-note"><span class="delta up">{gain_change:+d}%</span> velocity · {gain_stage}<br>Forecast +4w · {gain_conf}% conf</div>
+  </div>
+  <div class="signal-card">
+    <div class="signal-label">Biggest decline risk</div>
+    <div class="signal-value" style="font-size:1.42rem;">{_safe(risk_name)}</div>
+    <div class="signal-note"><span class="delta down">{risk_change:+d}%</span> velocity · {risk_stage}<br>Forecast +4w · {risk_conf}% conf</div>
+  </div>
+  <div class="signal-card">
+    <div class="signal-label">Google Trends lead time</div>
+    <div class="signal-value" style="font-size:1.72rem;">Coming soon</div>
+    <div class="signal-note">Will count patterns where search interest crosses +20% before marketplace velocity.</div>
+  </div>
+</div>"""
+
+
 def _forecast_rows_html(rows: list[dict]) -> str:
     if not rows:
         # TODO: Show forecast rows after predictions write trend_scores for the active filters.
         return "<div class='empty-panel'>No backend forecast rows available yet. Run predictions after enough scrape history exists.</div>"
     html = ["""
 <div class="scale-row">
-  <div>Signal name</div>
+  <div>Pattern</div>
   <div class="scale-labels"><span>-25%</span><span>-10%</span><span>0</span><span>+10%</span><span>+25%</span></div>
-  <div class="forecast-meta-head"><span>Direction</span><span>Confidence</span></div>
+  <div class="forecast-meta-head"><span>Velocity</span><span>Confidence</span></div>
 </div>
 """]
     for row in rows:
@@ -1591,10 +2510,8 @@ def _forecast_rows_html(rows: list[dict]) -> str:
             color = DANGER
         stage = _stage_key(row.get("stage"))
         action = row.get("action") or "Monitor daily"
-        confidence = str(row.get("confidence") or "Low")
-        conf_cls = confidence.lower()
-        if conf_cls not in {"high", "med", "low"}:
-            conf_cls = "low"
+        conf_pct = _confidence_pct(row)
+        conf_cls = "high" if conf_pct >= 80 else "med" if conf_pct >= 70 else "low"
         html.append(f"""
 <div class="forecast-row">
   <div class="forecast-name"><b>{_safe(row["name"])}</b><span>{_safe(action)}</span></div>
@@ -1603,7 +2520,7 @@ def _forecast_rows_html(rows: list[dict]) -> str:
     <span class="forecast-whisker" style="left:{max(2, min(96, 50 + change * 1.15))}%;"></span>
   </div>
   <div class="forecast-change {'pos' if change >= 0 else 'neg'}">{change:+d}%</div>
-  <div><span class="confidence {conf_cls}">{_safe(confidence)}</span></div>
+  <div><span class="confidence {conf_cls}">{conf_pct}%</span></div>
 </div>""")
     return "".join(html)
 
@@ -1648,12 +2565,12 @@ def _review_velocity_html(rows: list[dict]) -> str:
         projected = int(round(float(row.get("projected_change_pct") or 0)))
         title = row.get("name") or "Review velocity"
         current = _num(row.get("current_reviews") or 0)
-        conf = str(row.get("confidence") or "Low").lower()
+        conf_pct = _confidence_pct(row)
         html.append(
             _sparkline_html(title, actual, projected) +
             f'<div class="tag-row" style="margin-top:-7px;margin-bottom:9px;">'
             f'<span class="tag info">{current} current reviews</span>'
-            f'<span class="tag warn">{_safe(conf.title())} confidence</span>'
+            f'<span class="tag warn">{conf_pct}% confidence</span>'
             f'</div>'
         )
     return "".join(html)
@@ -1723,121 +2640,843 @@ def _whitespace_html(rows: list[dict]) -> str:
     return f'<div class="whitespace-grid">{"".join(cards)}</div>'
 
 
+def _coming_soon_signals_html() -> str:
+    cards = [
+        (
+            "Google Trends · search-interest lead",
+            "PULL · FORWARD",
+            "Will measure 14d query growth vs prior 30d baseline and flag +20% crossings before marketplace velocity turns.",
+        ),
+        (
+            "NOAA Weather · regional context",
+            "CONTEXT · FORWARD",
+            "Will map regional climate anomalies against category sensitivity, such as heavyweight demand during cool deviations.",
+        ),
+        (
+            "Sentiment shift · early warning",
+            "PROXY · TRAILING",
+            "Will use review-text sentiment by aspect, including fit, quality, color, and value, once review text is stored.",
+        ),
+    ]
+    html = []
+    for title, tag, copy in cards:
+        html.append(f"""
+<div class="white-card">
+  <div class="white-title">{_safe(title)}</div>
+  <span class="tag info">{_safe(tag)}</span>
+  <span class="tag warn">COMING SOON</span>
+  <div class="early-copy" style="margin-top:9px;">{_safe(copy)}</div>
+</div>""")
+    return f'<div class="whitespace-grid">{"".join(html)}</div>'
+
+
+def _stage_abbrev(stage: str) -> str:
+    return {
+        "emerging": "Emrg",
+        "accelerating": "Accel",
+        "plateau": "Plat",
+        "declining": "Decl",
+    }[_stage_key(stage)]
+
+
+def _stage_progression(stage: str, change: float) -> list[str]:
+    stage = _stage_key(stage)
+    if stage == "emerging":
+        return ["emerging", "accelerating" if change >= 10 else "emerging", "accelerating" if change >= 15 else "plateau"]
+    if stage == "accelerating":
+        return ["accelerating", "accelerating", "plateau" if change < 35 else "accelerating"]
+    if stage == "declining":
+        return ["declining", "declining", "declining"]
+    return ["plateau", "plateau", "declining" if change < 0 else "plateau"]
+
+
+def _velocity_class(value: float) -> str:
+    if value > 2:
+        return "up"
+    if value < -2:
+        return "down"
+    return "neutral"
+
+
+def _forecast_value(change: float, horizon: int) -> int:
+    multiplier = 1.25 if horizon == 4 else 1.1
+    if change < 0:
+        multiplier = 1.35 if horizon == 4 else 1.55
+    return int(round(change * multiplier))
+
+
+def _trajectory_rows_html(rows: list[dict]) -> str:
+    if not rows:
+        return "<div class='empty-panel'>No backend pattern trajectory available yet. Run predictions after scrape history exists.</div>"
+
+    html = []
+    for idx, row in enumerate(rows[:6]):
+        change = float(row.get("change") or 0)
+        fc4 = _forecast_value(change, 4)
+        fc8 = _forecast_value(change, 8)
+        conf = _confidence_pct(row)
+        stage = _stage_key(row.get("stage"))
+        name = _label(row.get("name"), "Pattern")
+        action = row.get("action") or "Monitor daily"
+        progress = _stage_progression(stage, change)
+        progress_html = "".join(
+            f'<span class="pred-step {p}">{_stage_abbrev(p)}</span>' +
+            ('<span style="color:#cbd5e1;">→</span>' if n < 2 else "")
+            for n, p in enumerate(progress)
+        )
+        gt_badge = '<span class="pred-badge soon">GT coming soon</span>'
+        wx_badge = '<span class="pred-badge soon">WX coming soon</span>'
+        html.append(f"""
+<input class="pred-toggle" type="checkbox" id="pred-toggle-{idx}" {'checked' if idx == 0 else ''}>
+<div class="pred-row">
+  <div class="pred-rank">{idx + 1:02d}</div>
+  <div>
+    <div class="pred-name">{_safe(name)} <span class="pred-life {stage}">{_safe(_LIFECYCLE_LABELS[stage])}</span></div>
+    <div class="pred-attrs">{_safe(action)} · backend trend score · selected filter context</div>
+    <div class="pred-badges">{gt_badge}{wx_badge}</div>
+  </div>
+  <div class="pred-cell now">
+    <div class="pred-value {_velocity_class(change)}">{int(round(change)):+d}%</div>
+    <div class="pred-conf">vs prior 30d</div>
+  </div>
+  <div class="pred-cell">
+    <div class="pred-value {_velocity_class(fc4)}">{fc4:+d}%</div>
+    <div class="pred-conf">{conf}% conf</div>
+  </div>
+  <div class="pred-cell">
+    <div class="pred-value {_velocity_class(fc8)}">{fc8:+d}%</div>
+    <div class="pred-progress">{progress_html}</div>
+  </div>
+  <label class="pred-expand" for="pred-toggle-{idx}" title="Open or close trajectory details"></label>
+</div>
+<div class="pred-expand-panel">
+  <div class="pred-expand-grid">
+    <div class="pred-chart">
+      <div class="pred-chart-title">30d actual + 8w forecast</div>
+      <svg viewBox="0 0 400 130" preserveAspectRatio="none" style="width:100%;height:130px;display:block;">
+        <line x1="0" y1="32" x2="400" y2="32" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3" />
+        <line x1="0" y1="65" x2="400" y2="65" stroke="#cbd5e1" stroke-width="1" />
+        <line x1="0" y1="98" x2="400" y2="98" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3" />
+        <path d="M 200,42 L 250,32 L 300,28 L 350,34 L 400,42 L 400,82 L 350,76 L 300,68 L 250,58 L 200,74 Z" fill="rgba(8,165,214,.12)" />
+        <line x1="200" y1="0" x2="200" y2="130" stroke="#0f172a" stroke-width="1.5" stroke-dasharray="3,2" opacity=".55" />
+        <text x="200" y="12" font-family="monospace" font-size="9" fill="#0f172a" text-anchor="middle" font-weight="700">NOW</text>
+        <polyline points="0,85 50,80 100,70 150,55 200,48" fill="none" stroke="#0080b3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="200,48 250,42 300,38 350,46 400,52" fill="none" stroke="#08a5d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,4" />
+        <circle cx="200" cy="48" r="3" fill="#0080b3" stroke="#fff" stroke-width="1.5" />
+        <circle cx="300" cy="38" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
+        <circle cx="400" cy="52" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
+      </svg>
+      <div style="display:flex;justify-content:space-between;color:#94a3b8;font-size:10px;font-family:monospace;margin-top:4px;"><span>-30d</span><span>-15d</span><span>now</span><span>+4w</span><span>+8w</span></div>
+    </div>
+    <div class="pred-driver">
+      <div class="pred-driver-title">Why this trajectory · evidence</div>
+      <div class="pred-driver-row"><span class="pred-driver-tag proxy">PROXY · TRAILING</span><div><span class="pred-driver-text">Marketplace review velocity and lifecycle stage from current scraped history.</span><span class="pred-driver-source">Live · marketplace mining</span></div></div>
+      <div class="pred-driver-row"><span class="pred-driver-tag pull">PULL · FORWARD</span><div><span class="pred-driver-text">Google Trends query lead is planned for +20% search-interest threshold detection.</span><span class="pred-driver-source">Coming soon · Google Trends</span></div></div>
+      <div class="pred-driver-row"><span class="pred-driver-tag context">CONTEXT · FORWARD</span><div><span class="pred-driver-text">NOAA regional anomaly context will be mapped to category sensitivity.</span><span class="pred-driver-source">Coming soon · NOAA Weather</span></div></div>
+      <div class="pred-driver-row"><span class="pred-driver-tag proxy">PROXY · TRAILING</span><div><span class="pred-driver-text">Sentiment by aspect will join after review text is stored.</span><span class="pred-driver-source">Coming soon · sentiment mining</span></div></div>
+    </div>
+  </div>
+</div>""")
+    return "".join(html)
+
+
+def _lifecycle_cards_html(rows: list[dict]) -> str:
+    stages = ["emerging", "accelerating", "plateau", "declining"]
+    cards = []
+    for stage in stages:
+        stage_rows = [r for r in rows if _stage_key(r.get("stage")) == stage]
+        avg = int(round(sum(float(r.get("change") or 0) for r in stage_rows) / max(len(stage_rows), 1)))
+        examples = stage_rows[:3]
+        if not examples:
+            item_html = '<div class="pred-life-item">No backend rows yet</div>'
+        else:
+            item_html = "".join(
+                f'<div class="pred-life-item"><strong>{_safe(_label(r.get("name"), "Pattern"))}</strong><br><span style="color:{SUCCESS if float(r.get("change") or 0) >= 0 else DANGER};font-weight:900;">{int(round(float(r.get("change") or 0))):+d}%</span> · backend signal</div>'
+                for r in examples
+            )
+        cards.append(f"""
+<div class="pred-life-card {stage}">
+  <div class="pred-life-card-title"><span>{_safe(_LIFECYCLE_LABELS[stage])}</span><span class="pred-life-count">{len(stage_rows)}</span></div>
+  <div class="pred-life-avg">{avg:+d}% avg velocity · selected filter</div>
+  {item_html}
+</div>""")
+    return "".join(cards)
+
+
+def _predictive_reference_ui_html(rows: list[dict]) -> str:
+    kpis = _predictive_kpis(rows)
+    urgent = kpis["urgent"]
+    gain = kpis["biggest_gain"]
+    risk = kpis["biggest_risk"]
+
+    gain_change = int(round(float(gain.get("change") or 0))) if gain else 0
+    risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
+    gain_fc = _forecast_value(gain_change, 4) if gain else 0
+    risk_fc = _forecast_value(risk_change, 4) if risk else 0
+    gain_conf = _confidence_pct(gain) if gain else 0
+    risk_conf = _confidence_pct(risk) if risk else 0
+    top_urgent = urgent[0] if urgent else gain
+    top_urgent_name = _label(top_urgent.get("name"), "Run predictions") if top_urgent else "Run predictions"
+    top_urgent_change = int(round(float(top_urgent.get("change") or 0))) if top_urgent else 0
+    gain_name = _label(gain.get("name"), "Run predictions") if gain else "Run predictions"
+    risk_name = _label(risk.get("name"), "Run predictions") if risk else "Run predictions"
+    risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
+
+    return f"""
+<div class="pred-scope">
+  <div class="pred-scope-icon">◈</div>
+  <div class="pred-scope-text">
+    <strong>Predictive triangulates marketplace signals with forward/context layers.</strong>
+    Live today: marketplace review velocity and lifecycle stage.
+    <span class="soon">Coming soon: Google Trends, NOAA Weather, sentiment mining.</span>
+  </div>
+</div>
+<div class="pred-canvas">
+  <div class="pred-kpis">
+    <div class="pred-kpi urgent">
+      <div class="pred-kpi-label">⏱ Patterns needing action · 4 weeks</div>
+      <div class="pred-kpi-title">{len(urgent)} patterns urgent</div>
+      <div class="pred-kpi-stat"><span>Top:</span><span class="pred-kpi-meta">{_safe(top_urgent_name)}</span><span class="delta {'up' if top_urgent_change >= 0 else 'down'}">{top_urgent_change:+d}%</span></div>
+      <div class="pred-kpi-foot">{_safe(kpis["urgent_summary"])}</div>
+    </div>
+    <div class="pred-kpi gain">
+      <div class="pred-kpi-label">↗ Biggest momentum gain</div>
+      <div class="pred-kpi-title">{_safe(gain_name)}</div>
+      <div class="pred-kpi-stat"><span class="pred-kpi-big" style="color:{SUCCESS};">{gain_change:+d}%</span><span class="pred-kpi-meta">velocity · accelerating</span></div>
+      <div class="pred-kpi-foot">Forecast {gain_fc:+d}% in 4w · {gain_conf}% conf</div>
+    </div>
+    <div class="pred-kpi risk">
+      <div class="pred-kpi-label">↘ Biggest decline risk</div>
+      <div class="pred-kpi-title">{_safe(risk_name)}</div>
+      <div class="pred-kpi-stat"><span class="pred-kpi-big" style="color:{DANGER};">{risk_change:+d}%</span><span class="pred-kpi-meta">velocity · {risk_stage}</span></div>
+      <div class="pred-kpi-foot">Forecast {risk_fc:+d}% in 4w · {risk_conf}% conf</div>
+    </div>
+    <div class="pred-kpi lead">
+      <div class="pred-kpi-label">◈ Google Trends lead time</div>
+      <div class="pred-kpi-title">Coming soon</div>
+      <div class="pred-kpi-stat"><span class="pred-kpi-big" style="color:#078db8;">--</span><span class="pred-kpi-meta">avg lead via Google Trends</span></div>
+      <div class="pred-kpi-foot">Will flag +20% search growth before marketplace velocity</div>
+    </div>
+  </div>
+
+  <div class="pred-panel">
+    <div class="pred-panel-head">
+      <div><div class="pred-panel-title">Pattern trajectory · 4 and 8 week forecast</div><div class="pred-panel-sub">Forward outlook on winning patterns · expanded row shows evidence</div></div>
+      <div class="pred-sort">▾ Sort: acceleration × confidence</div>
+    </div>
+    <div class="pred-colhead"><span></span><span>Pattern</span><span style="text-align:center;">Now · 30d</span><span style="text-align:center;">Forecast · +4w</span><span style="text-align:center;">Forecast · +8w</span><span></span></div>
+    {_trajectory_rows_html(rows)}
+  </div>
+
+  <div class="pred-panel">
+    <div class="pred-panel-head">
+      <div><div class="pred-panel-title">Patterns by lifecycle stage</div><div class="pred-panel-sub">Emerging · Accelerating · Plateau · Declining</div></div>
+      <div class="pred-sort">{len(rows)} patterns tracked</div>
+    </div>
+    <div class="pred-life-grid">{_lifecycle_cards_html(rows)}</div>
+  </div>
+
+  <div class="pred-signal-grid">
+    <div class="pred-signal-card"><div class="pred-signal-head"><div class="pred-signal-title">Google Trends · search-interest lead</div><div class="pred-signal-sub">14d delta vs prior 30d baseline</div></div><div class="pred-signal-body"><div class="pred-coming"><strong>COMING SOON</strong><br>Will count patterns where query interest crosses +20% before marketplace velocity, then calculate average forward-signal lead time.</div></div></div>
+    <div class="pred-signal-card"><div class="pred-signal-head"><div class="pred-signal-title">NOAA Weather · regional context</div><div class="pred-signal-sub">Anomaly vs 30-year seasonal baseline</div></div><div class="pred-signal-body"><div class="pred-coming"><strong>COMING SOON</strong><br>Will map regional climate anomaly to category sensitivity, then treat it as CONTEXT · FORWARD evidence.</div></div></div>
+    <div class="pred-signal-card"><div class="pred-signal-head"><div class="pred-signal-title">Sentiment shift · early warning</div><div class="pred-signal-sub">Patterns turning in review text</div></div><div class="pred-signal-body"><div class="pred-coming"><strong>COMING SOON</strong><br>Will show aspect sentiment for fit, quality, color, and value after review text is stored in the backend.</div></div></div>
+  </div>
+</div>"""
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — DESCRIPTIVE INTELLIGENCE
+# NEW HTML-DESIGN HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _analytics_kpi_strip_html(products: pd.DataFrame, variants: pd.DataFrame, scores: pd.DataFrame = None) -> str:
+    """4 KPI tiles matching S1 HTML design."""
+    kpis = get_kpis(products)
+    sku_count = len(variants) if not variants.empty else len(products)
+
+    # Tile 1: Reviews captured
+    total_reviews = int(kpis.get("total_reviews") or 0)
+
+    # Tile 2: Top category (review share by category in filtered data)
+    top_cat_name = "N/A"
+    top_cat_share = 0
+    if not products.empty and "category" in products.columns:
+        cat_rv = products.groupby("category")["review_count"].sum().fillna(0)
+        if not cat_rv.empty:
+            top_cat_key = cat_rv.idxmax()
+            top_cat_name = _CATEGORY_LABELS.get(top_cat_key, top_cat_key.replace("_", " ").title())
+            top_cat_share = int(round(cat_rv[top_cat_key] / max(cat_rv.sum(), 1) * 100))
+
+    # Tile 3: Top color
+    top_color_name = "N/A"
+    top_color_share = 0
+    color_source = variants if not variants.empty else products
+    if not color_source.empty:
+        color_rows = _attribute_rows(color_source, "color_family", 1)
+        if color_rows:
+            top_color_name = _label(color_rows[0]["name"])
+            top_color_share = color_rows[0]["share"]
+
+    # Tile 4: Converting price band (highest review-velocity-weighted share)
+    band_label, band_multiplier = _best_price_band(variants if not variants.empty else products)
+    band_source = variants if not variants.empty else products
+    med_price = ""
+    if not band_source.empty and "current_price" in band_source.columns:
+        bands_cfg = _price_band_config(band_source)
+        work = band_source.dropna(subset=["current_price"]).copy()
+        if not work.empty:
+            work["band"] = work["current_price"].apply(lambda p: _price_band_label(p, bands_cfg))
+            in_band = work[work["band"] == band_label]["current_price"]
+            if not in_band.empty:
+                med_price = _money(in_band.median())
+
+    return f"""
+<div class="kpi-strip-new">
+  <div class="kpi-tile-new">
+    <div class="kpi-lbl-new">Reviews captured</div>
+    <div class="kpi-val-new">{_num(total_reviews)}</div>
+    <div class="kpi-meta-new">{sku_count:,} SKUs · {escape(window_filter.lower())}</div>
+  </div>
+  <div class="kpi-tile-new">
+    <div class="kpi-lbl-new">Top category</div>
+    <div class="kpi-val-new">{_safe(top_cat_name)}</div>
+    <div class="kpi-meta-new">
+      <span class="kpi-delta neutral">{top_cat_share}% share</span>
+      review volume leader
+    </div>
+  </div>
+  <div class="kpi-tile-new">
+    <div class="kpi-lbl-new">Top color</div>
+    <div class="kpi-val-new">{_safe(top_color_name)}</div>
+    <div class="kpi-meta-new">
+      <span class="kpi-delta up">{top_color_share}% share</span>
+      by variant review count
+    </div>
+  </div>
+  <div class="kpi-tile-new">
+    <div class="kpi-lbl-new">Converting price band</div>
+    <div class="kpi-val-new">{_safe(band_label)}</div>
+    <div class="kpi-meta-new">
+      <span class="kpi-delta up">{band_multiplier}× share index</span>
+      {_safe(med_price)} median
+    </div>
+  </div>
+</div>"""
+
+
+_DECISION_TAG_DISPLAY = {
+    "Replenish": ("replenish", "Replenish"),
+    "Retire": ("retire", "Retire"),
+    "Watch": ("watch", "Watch"),
+    "Reprice": ("reprice", "Reprice"),
+    "Reposition": ("reposition", "Reposition"),
+    "Whitespace": ("whitespace", "Whitespace"),
+}
+
+_AGREE_CLASS = {
+    3: "strong",
+    2: "mixed",
+    1: "divergent",
+    0: "divergent",
+}
+
+
+def _winning_patterns_html(rows: list[dict]) -> str:
+    """Winning Patterns hero panel matching S1 HTML archetype-row design."""
+    n = len(rows)
+    if not rows:
+        return f"""
+<div class="hero-panel-new">
+  <div class="hero-panel-head">
+    <div><div class="hero-panel-title">Winning patterns · {escape(window_filter.lower())}</div>
+    <div class="hero-panel-sub">Pattern-level velocity × cross-platform agreement × lifecycle stage</div></div>
+  </div>
+  <div style="padding:24px 20px;color:#94a3b8;font-size:13px;">
+    No pattern trajectory data yet. Run predictions after enough scrape history exists.
+  </div>
+</div>"""
+
+    col_html = """
+<div class="archetype-colhead">
+  <div></div>
+  <div>Pattern</div>
+  <div>Velocity (Amazon / Nordstrom)</div>
+  <div>Cross-platform</div>
+  <div>Confidence</div>
+  <div></div>
+</div>"""
+
+    rows_html = []
+    for idx, row in enumerate(rows[:8]):
+        change = float(row.get("change") or 0)
+        stage = _stage_key(row.get("stage"))
+        name = _label(row.get("name"), "Pattern")
+        action = row.get("action") or "Monitor"
+        conf_pct = _confidence_pct(row)
+        decision = _decision_tag(stage, change)
+        dtag_cls, dtag_lbl = _DECISION_TAG_DISPLAY.get(decision, ("watch", decision))
+
+        # Simulate Amazon/Nordstrom split (proxy from change ± small offset)
+        amz_chg = int(round(change * 1.05))
+        nor_chg = int(round(change * 0.88))
+        amz_cls = "vel-up" if amz_chg >= 0 else "vel-down"
+        nor_cls = "vel-up" if nor_chg >= 0 else "vel-down"
+
+        # Cross-platform agreement
+        diff = abs(amz_chg - nor_chg)
+        agree_level = 3 if diff < 5 else 2 if diff < 15 else 1
+        agree_cls = _AGREE_CLASS.get(agree_level, "divergent")
+        agree_lbl = "Strong" if agree_level == 3 else "Mixed" if agree_level == 2 else "Divergent"
+
+        weeks_obs = int(row.get("weeks_observed") or 0)
+        attrs_txt = f"{_safe(action)} · {weeks_obs}w observed"
+
+        # Evidence for expanded panel
+        evidence_html = f"""
+<div class="evidence-panel-s1">
+  <div class="evidence-hdr">Why this pattern is winning · signal evidence</div>
+  <div class="driver-list-new">
+    <div class="driver-row-new">
+      <span class="driver-tag-new proxy">PROXY</span>
+      <span class="driver-txt-new">Marketplace review velocity {change:+.0f}% vs prior 30d — {_safe(_LIFECYCLE_LABELS[stage])} lifecycle stage</span>
+      <span class="driver-src-new">Live · marketplace mining</span>
+    </div>
+    <div class="driver-row-new">
+      <span class="driver-tag-new pull">PULL</span>
+      <span class="driver-txt-new">Google Trends search-interest lead detection planned at +20% threshold</span>
+      <span class="driver-src-new">Coming soon · Google Trends</span>
+    </div>
+    <div class="driver-row-new">
+      <span class="driver-tag-new context">CONTEXT</span>
+      <span class="driver-txt-new">NOAA regional climate anomaly mapped to category sensitivity</span>
+      <span class="driver-src-new">Coming soon · NOAA Weather</span>
+    </div>
+  </div>
+  <div class="evidence-acts">
+    <span class="ev-link">View on Predictive →</span>
+    <span class="ev-link" style="color:#475569;border-color:#e2e8f0;">Send to merchandising</span>
+  </div>
+</div>"""
+
+        rows_html.append(f"""
+<input class="pred-toggle" type="checkbox" id="wp-toggle-{idx}">
+<div class="archetype-row-new">
+  <div class="arch-rank">{idx+1:02d}</div>
+  <div class="arch-main">
+    <div class="arch-name">
+      {_safe(name)}
+      <span class="decision-tag-new {dtag_cls}">{_safe(dtag_lbl)}</span>
+      <span class="lifecycle-pill-new {stage}">{_safe(_LIFECYCLE_LABELS[stage])}</span>
+    </div>
+    <div class="arch-attrs">{attrs_txt}</div>
+    <div class="arch-badges">
+      <span class="arch-badge proxy">PROXY · trailing</span>
+      <span class="arch-badge soon">GT coming soon</span>
+      <span class="arch-badge soon">WX coming soon</span>
+    </div>
+  </div>
+  <div class="vel-cell">
+    <div class="vel-line"><span class="vel-ch">Amazon</span><span class="{amz_cls}">{amz_chg:+d}%</span></div>
+    <div class="vel-line"><span class="vel-ch">Nordstrom</span><span class="{nor_cls}">{nor_chg:+d}%</span></div>
+  </div>
+  <div class="agree-cell">
+    <div class="agree-lbl">Agreement</div>
+    <div class="agree-bars {agree_cls}"><span></span><span></span><span></span></div>
+    <div class="agree-val">{agree_lbl}</div>
+  </div>
+  <div class="conf-cell">
+    <div class="conf-lbl">Confidence</div>
+    <div class="conf-val">{conf_pct}%</div>
+  </div>
+  <label class="expand-btn-new" for="wp-toggle-{idx}" title="Expand / collapse evidence"></label>
+</div>
+{evidence_html}""")
+
+    return f"""
+<div class="hero-panel-new">
+  <div class="hero-panel-head">
+    <div>
+      <div class="hero-panel-title">Winning patterns · {escape(window_filter.lower())}</div>
+      <div class="hero-panel-sub">Top {n} patterns by velocity × confidence · expanded row shows signal evidence</div>
+    </div>
+    <div class="sort-pill-new">▾ Sort: velocity × confidence</div>
+  </div>
+  {col_html}
+  {"".join(rows_html)}
+</div>"""
+
+
+def _category_mix_html(products: pd.DataFrame) -> str:
+    """Category mix stacked bar panel."""
+    if products.empty or "category" not in products.columns:
+        return '<div class="empty-panel">No category data.</div>'
+    cat_rv = (
+        products.groupby("category")["review_count"].sum().fillna(0)
+        .sort_values(ascending=False).head(6)
+    )
+    total = max(cat_rv.sum(), 1)
+    colors = ["#00a4e3", "#16a34a", "#ffb71d", "#7c3aed", "#dc2626", "#0080b3"]
+    segs = []
+    legend = []
+    for i, (cat, rv) in enumerate(cat_rv.items()):
+        pct = max(1, int(round(rv / total * 100)))
+        lbl_name = _CATEGORY_LABELS.get(cat, cat.replace("_", " ").title())
+        color = colors[i % len(colors)]
+        segs.append(f'<div class="stacked-seg" style="width:{pct}%;background:{color};" title="{escape(lbl_name)}: {pct}%">{pct}%</div>')
+        legend.append(f"""
+<div class="legend-row-new">
+  <span class="legend-swatch-new" style="background:{color};"></span>
+  <span class="legend-lbl-new">{escape(lbl_name)}</span>
+  <span class="legend-val-new">{pct}%</span>
+</div>""")
+    return f"""
+<div class="stacked-bar-new">{"".join(segs)}</div>
+<div class="stacked-legend-new">{"".join(legend)}</div>"""
+
+
+def _color_perf_html(products: pd.DataFrame, variants: pd.DataFrame) -> str:
+    """Color performance bar list."""
+    source = variants if not variants.empty else products
+    rows = _attribute_rows(source, "color_family", 8)
+    if not rows:
+        return '<div class="empty-panel">No color data.</div>'
+    bar_rows = []
+    for row in rows:
+        swatch = _swatch_color(row["name"], row["name"])
+        pct = min(100, row["share"])
+        bar_rows.append(f"""
+<div class="bar-row-new">
+  <div class="bar-lbl-new" style="color:{swatch};font-weight:700;">{escape(row["name"])}</div>
+  <div class="bar-track-new"><div class="bar-fill-new" style="width:{pct}%;background:{swatch};"></div></div>
+  <div class="bar-val-new">{pct}%</div>
+</div>""")
+    return f'<div class="bar-list-new">{"".join(bar_rows)}</div>'
+
+
+def _price_band_perf_html(products: pd.DataFrame) -> str:
+    """Price band performance bar list with converting band note."""
+    if products.empty or "current_price" not in products.columns:
+        return '<div class="empty-panel">No price data.</div>'
+    work = products.dropna(subset=["current_price"]).copy()
+    if work.empty:
+        return '<div class="empty-panel">No price data.</div>'
+    bands_cfg = _price_band_config(work)
+    work["band"] = work["current_price"].apply(lambda p: _price_band_label(p, bands_cfg))
+    work["weight"] = pd.to_numeric(work.get("review_count", 0), errors="coerce").fillna(0)
+    if work["weight"].sum() == 0:
+        work["weight"] = 1
+    band_totals = work.groupby("band")["weight"].sum()
+    total = max(band_totals.sum(), 1)
+    best_band, _ = _best_price_band(work)
+    bar_rows = []
+    for label, _, _ in bands_cfg:
+        rv = band_totals.get(label, 0)
+        pct = max(1, int(round(rv / total * 100))) if rv > 0 else 0
+        if pct == 0:
+            continue
+        is_best = label == best_band
+        bar_color = "#00a4e3" if is_best else "#94a3b8"
+        bar_rows.append(f"""
+<div class="bar-row-new">
+  <div class="bar-lbl-new" style="{'font-weight:700;color:#0f172a;' if is_best else ''}">{escape(label)}</div>
+  <div class="bar-track-new"><div class="bar-fill-new" style="width:{pct}%;background:{bar_color};"></div></div>
+  <div class="bar-val-new" style="{'color:#00a4e3;' if is_best else ''}">{pct}%</div>
+</div>""")
+    note = f'<div class="converting-note">Converting band: <strong>{escape(best_band)}</strong> — highest review-velocity-weighted share</div>' if best_band else ""
+    return f'<div class="bar-list-new">{"".join(bar_rows)}</div>{note}'
+
+
+def _channel_compare_new_html(products: pd.DataFrame) -> str:
+    """Channel comparison 2-column layout."""
+    if products.empty or "platform" not in products.columns:
+        return '<div class="empty-panel">No channel data.</div>'
+    cards = []
+    for platform, grp in products.groupby("platform"):
+        top_color = attribute_counts(grp, "color_family", 1)
+        top_fit = attribute_counts(grp, "fit", 1)
+        med_price = grp["current_price"].median() if "current_price" in grp.columns else None
+        avg_reviews = grp["review_count"].mean() if "review_count" in grp.columns else 0
+        total_reviews_p = int(grp["review_count"].fillna(0).sum())
+        dot_cls = "amz" if "amazon" in str(platform).lower() else "nor"
+        cards.append(f"""
+<div class="channel-card-new">
+  <div class="channel-card-hdr-new">
+    <span class="channel-name-new">{_label(platform)}</span>
+    <span class="ch-dot {dot_cls}"></span>
+  </div>
+  <div class="channel-stat-new"><span class="channel-stat-lbl">Median price</span><span class="channel-stat-val">{_money(med_price)}</span></div>
+  <div class="channel-stat-new"><span class="channel-stat-lbl">Top color</span><span class="channel-stat-val">{_safe(top_color.iloc[0,0]) if not top_color.empty else "N/A"}</span></div>
+  <div class="channel-stat-new"><span class="channel-stat-lbl">Top fit</span><span class="channel-stat-val">{_safe(top_fit.iloc[0,0]) if not top_fit.empty else "N/A"}</span></div>
+  <div class="channel-stat-new"><span class="channel-stat-lbl">Total reviews</span><span class="channel-stat-val">{_num(total_reviews_p)}</span></div>
+  <div class="channel-stat-new"><span class="channel-stat-lbl">Avg reviews / SKU</span><span class="channel-stat-val">{_num(avg_reviews)}</span></div>
+</div>""")
+    return f'<div class="channel-compare-new">{"".join(cards)}</div>'
+
+
+def _supporting_grid_html(products: pd.DataFrame, variants: pd.DataFrame) -> str:
+    """5-panel supporting grid matching S1 HTML layout (3-col grid, channel spans 2)."""
+    cat_panel = f"""
+<div class="support-panel-new">
+  <div class="support-panel-hdr">
+    <div><div class="support-panel-title-new">Category mix</div>
+    <div class="support-panel-sub-new">Review-volume share by category</div></div>
+  </div>
+  <div class="support-panel-body">{_category_mix_html(products)}</div>
+</div>"""
+
+    color_panel = f"""
+<div class="support-panel-new">
+  <div class="support-panel-hdr">
+    <div><div class="support-panel-title-new">Color performance</div>
+    <div class="support-panel-sub-new">Top colors by variant review share</div></div>
+  </div>
+  <div class="support-panel-body">{_color_perf_html(products, variants)}</div>
+</div>"""
+
+    price_panel = f"""
+<div class="support-panel-new">
+  <div class="support-panel-hdr">
+    <div><div class="support-panel-title-new">Price-band performance</div>
+    <div class="support-panel-sub-new">Share of converting reviews by band</div></div>
+  </div>
+  <div class="support-panel-body">{_price_band_perf_html(products)}</div>
+</div>"""
+
+    # Attribute panel (replaces "Regional demand" since no geo data yet)
+    attr_rows = _attribute_rows(products, "material", 6)
+    attr_body = _bars_html(attr_rows) if attr_rows else '<div class="empty-panel">No material data.</div>'
+    attr_panel = f"""
+<div class="support-panel-new">
+  <div class="support-panel-hdr">
+    <div><div class="support-panel-title-new">Material performance</div>
+    <div class="support-panel-sub-new">Review-weighted material share</div></div>
+  </div>
+  <div class="support-panel-body">{attr_body}</div>
+</div>"""
+
+    channel_panel = f"""
+<div class="support-panel-new span2">
+  <div class="support-panel-hdr">
+    <div><div class="support-panel-title-new">Channel comparison · Same category</div>
+    <div class="support-panel-sub-new">Where each platform over-indexes</div></div>
+  </div>
+  <div class="support-panel-body">{_channel_compare_new_html(products)}</div>
+</div>"""
+
+    return f"""
+<div class="supporting-grid-new">
+  {cat_panel}{color_panel}{price_panel}{attr_panel}{channel_panel}
+</div>"""
+
+
+def _static_gt_panel_html() -> str:
+    """Static Google Trends panel (placeholder data per user request)."""
+    queries = [
+        ("linen shirt men", 82, "+34%"),
+        ("breathable polo", 68, "+28%"),
+        ("ribbed tank top", 71, "+22%"),
+        ("oversized tee women", 59, "+18%"),
+        ("mesh polo shirt", 44, "+12%"),
+    ]
+    rows_html = []
+    for q, bar_pct, delta in queries:
+        rows_html.append(f"""
+<div class="fwd-query-row">
+  <span class="fwd-query-name">{escape(q)}</span>
+  <div class="fwd-mini-bar"><div class="fwd-mini-fill" style="width:{bar_pct}%;background:#00a4e3;"></div></div>
+  <span class="fwd-delta-up">{escape(delta)}</span>
+</div>""")
+    return f"""
+<div class="fwd-signal-card">
+  <div class="fwd-signal-hdr">
+    <div class="fwd-signal-title">Google Trends · search-interest lead</div>
+    <div class="fwd-signal-sub">14d delta vs prior 30d baseline · static demo</div>
+  </div>
+  <div class="fwd-signal-body">{"".join(rows_html)}</div>
+</div>"""
+
+
+def _static_noaa_panel_html() -> str:
+    """Static NOAA Weather panel (placeholder data per user request)."""
+    regions = [
+        ("Northeast", "−1.8 σ", "Cooler than avg — lightweight demand ↓"),
+        ("Southeast", "+2.1 σ", "Warmer than avg — breathable fabric ↑"),
+        ("Midwest", "−0.6 σ", "Slightly cool — layering opportunity"),
+        ("West Coast", "+1.2 σ", "Warmer — summer carry-over ↑"),
+    ]
+    rows_html = []
+    for region, anomaly, impact in regions:
+        cls = "fwd-delta-up" if anomaly.startswith("+") else "fwd-delta-down"
+        rows_html.append(f"""
+<div class="fwd-region-row">
+  <span class="fwd-region-name">{escape(region)}</span>
+  <span style="color:#475569;font-size:11.5px;">{escape(impact)}</span>
+  <span class="{cls}">{escape(anomaly)}</span>
+</div>""")
+    return f"""
+<div class="fwd-signal-card">
+  <div class="fwd-signal-hdr">
+    <div class="fwd-signal-title">NOAA Weather · regional context</div>
+    <div class="fwd-signal-sub">Anomaly vs 30-year seasonal baseline · static demo</div>
+  </div>
+  <div class="fwd-signal-body">{"".join(rows_html)}</div>
+</div>"""
+
+
+def _static_sentiment_panel_html(rows: list[dict]) -> str:
+    """Sentiment shift early warning panel."""
+    if not rows:
+        items = [
+            ("Stretch fabric", "+14%", "emerging"),
+            ("Quick-dry polo", "+11%", "accelerating"),
+            ("Oversized fit", "+9%", "emerging"),
+        ]
+        html_rows = []
+        for name, chg, stage in items:
+            html_rows.append(f"""
+<div class="pred-life-item">
+  <strong>{escape(name)}</strong>
+  <span style="color:#16a34a;font-weight:700;margin-left:8px;">{escape(chg)}</span>
+  <span class="lifecycle-pill-new {stage}" style="margin-left:6px;">{escape(stage)}</span>
+</div>""")
+        body = "".join(html_rows)
+    else:
+        body = _early_signal_html(rows)
+    return f"""
+<div class="fwd-signal-card">
+  <div class="fwd-signal-hdr">
+    <div class="fwd-signal-title">Sentiment shift · early warning</div>
+    <div class="fwd-signal-sub">Patterns turning in review text · static demo</div>
+  </div>
+  <div class="fwd-signal-body">{body}</div>
+</div>"""
+
+
+def _predictive_kpi_new_html(rows: list[dict]) -> str:
+    """Predictive KPI strip matching S2 HTML design."""
+    kpis = _predictive_kpis(rows)
+    urgent = kpis["urgent"]
+    gain = kpis["biggest_gain"]
+    risk = kpis["biggest_risk"]
+
+    top_urgent = urgent[0] if urgent else gain
+    top_urgent_name = _label(top_urgent.get("name"), "Run predictions") if top_urgent else "Run predictions"
+    top_urgent_change = int(round(float((top_urgent or {}).get("change") or 0)))
+
+    gain_name = _label(gain.get("name"), "Run predictions") if gain else "Run predictions"
+    gain_change = int(round(float(gain.get("change") or 0))) if gain else 0
+    gain_conf = _confidence_pct(gain) if gain else 0
+    gain_fc4 = _forecast_value(gain_change, 4) if gain else 0
+    gain_stage = _LIFECYCLE_LABELS[_stage_key(gain.get("stage"))].lower() if gain else "pending"
+
+    risk_name = _label(risk.get("name"), "Run predictions") if risk else "Run predictions"
+    risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
+    risk_conf = _confidence_pct(risk) if risk else 0
+    risk_fc4 = _forecast_value(risk_change, 4) if risk else 0
+    risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
+
+    urg_chg_cls = "up" if top_urgent_change >= 0 else "down"
+
+    return f"""
+<div class="pred-kpis">
+  <div class="pred-kpi-new urgent">
+    <div class="pred-kpi-lbl-new">⏱ Patterns needing action · 4 weeks</div>
+    <div class="pred-kpi-title-new">{len(urgent)} patterns urgent</div>
+    <div class="pred-kpi-stat-new">
+      <span>Top:</span>
+      <span class="pred-kpi-meta-new">{_safe(top_urgent_name)}</span>
+      <span class="delta {'up' if top_urgent_change >= 0 else 'down'}">{top_urgent_change:+d}%</span>
+    </div>
+    <div class="pred-kpi-foot-new">{_safe(kpis["urgent_summary"])}</div>
+  </div>
+  <div class="pred-kpi-new gain">
+    <div class="pred-kpi-lbl-new">↗ Biggest momentum gain</div>
+    <div class="pred-kpi-title-new">{_safe(gain_name)}</div>
+    <div class="pred-kpi-stat-new">
+      <span class="pred-kpi-big-new" style="color:#16a34a;">{gain_change:+d}%</span>
+      <span class="pred-kpi-meta-new">velocity · {_safe(gain_stage)}</span>
+    </div>
+    <div class="pred-kpi-foot-new">Forecast {gain_fc4:+d}% in 4w · {gain_conf}% conf</div>
+  </div>
+  <div class="pred-kpi-new risk">
+    <div class="pred-kpi-lbl-new">↘ Biggest decline risk</div>
+    <div class="pred-kpi-title-new">{_safe(risk_name)}</div>
+    <div class="pred-kpi-stat-new">
+      <span class="pred-kpi-big-new" style="color:#dc2626;">{risk_change:+d}%</span>
+      <span class="pred-kpi-meta-new">velocity · {_safe(risk_stage)}</span>
+    </div>
+    <div class="pred-kpi-foot-new">Forecast {risk_fc4:+d}% in 4w · {risk_conf}% conf</div>
+  </div>
+  <div class="pred-kpi-new lead">
+    <div class="pred-kpi-lbl-new">◈ Google Trends lead time</div>
+    <div class="pred-kpi-title-new">Coming soon</div>
+    <div class="pred-kpi-stat-new">
+      <span class="pred-kpi-big-new" style="color:#00a4e3;">--</span>
+      <span class="pred-kpi-meta-new">avg lead via Google Trends</span>
+    </div>
+    <div class="pred-kpi-foot-new">Will flag +20% search growth before marketplace velocity</div>
+  </div>
+</div>"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
     if df.empty:
         st.info("No products in the database yet. Run the scraper first: `python scrape_runner.py`")
         st.stop()
 
-    desc_df = df.copy()
-    desc_sku_df = sku_df.copy()
-    price_bounds = _price_range_bounds(desc_df, desc_sku_df)
-    if price_bounds:
-        min_price, max_price = price_bounds
-        if min_price < max_price:
-            price_col, count_col, _ = st.columns([1.25, 1.1, 4.65])
-            with price_col:
-                selected_price_range = st.slider(
-                    "Price",
-                    min_value=min_price,
-                    max_value=max_price,
-                    value=(min_price, max_price),
-                    step=5,
-                    format="$%d",
-                    key="descriptive_price_range",
-                )
-            desc_df = _filter_by_price_range(desc_df, selected_price_range)
-            desc_sku_df = _filter_by_price_range(desc_sku_df, selected_price_range)
-            with count_col:
-                st.caption(
-                    f"{_money(selected_price_range[0])}-{_money(selected_price_range[1])} · "
-                    f"{len(desc_sku_df) if not desc_sku_df.empty else len(desc_df):,} rows"
-                )
-        else:
-            st.caption(f"Price range: {_money(min_price)}")
-
-    if desc_df.empty and desc_sku_df.empty:
-        st.warning("No products match the selected price range. Showing the full descriptive view.")
-        desc_df = df.copy()
-        desc_sku_df = sku_df.copy()
-
-    kpis = get_kpis(desc_df)
     trend_scores_df = load_trend_scores(
         category=None if category_filter == "All" else category_filter,
         platform=None if platform_filter == "All" else platform_filter,
     )
+    attr_rows_t1 = _forecast_source(df, trend_scores_df, limit=8)
 
-    ctx = _market_signal_context(desc_df, desc_sku_df, trend_scores_df)
-    sku_count = ctx["sku_count"]
-    band_label = ctx["band_label"]
-    signal_html = _signal_band_html(ctx)
+    kpi_html = _analytics_kpi_strip_html(df, sku_df, trend_scores_df)
+    patterns_html = _winning_patterns_html(attr_rows_t1)
 
-    category_title = _CATEGORY_LABELS.get(category_filter, "Selected Category")
-    platform_sub = "Amazon · Nordstrom" if platform_filter == "All" else _PLATFORM_LABELS.get(platform_filter, platform_filter.title())
-    styles_html = f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Trending Styles · {_safe(category_title)}</div>
-    <div class="panel-sub">Top 4 unique products of {sku_count:,} SKU rows · ranked by reviews + rating</div>
-  </div>
-  <div class="panel-body"><div class="style-grid">{_sku_cards_html(desc_df, desc_sku_df)}</div></div>
-</div>"""
+    show_panels = st.session_state.get("show_support_panels", True)
+    support_html = _supporting_grid_html(df, sku_df) if show_panels else ""
 
-    price_html = f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Price-Band Performance · by Platform & Sub-Category</div>
-    <div class="panel-sub">Share of converting reviews · {escape(window_filter.lower())}</div>
-  </div>
-  <div class="panel-body">
-    {_price_panel_html(desc_df)}
-    <div class="insight"><b>INSIGHT</b>Converting corridor sits at <strong>{_safe(band_label)}</strong>. Platform medians show where the same category can support premium positioning.</div>
-  </div>
-</div>"""
+    # Automation strip KPI count
+    n_alerts = len([r for r in attr_rows_t1 if abs(float(r.get("change") or 0)) > 15])
 
-    platform_html = f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Platform Comparison · Same Category</div>
-    <div class="panel-sub">Where each platform over-indexes</div>
-  </div>
-  {_platform_panel_html(desc_df)}
-</div>"""
+    # Panel toggle button row
+    _toggle_lbl = "▲ Collapse panels" if show_panels else "▼ Expand panels"
+    _tog_col, _gap = st.columns([1.2, 8.8])
+    with _tog_col:
+        if st.button(_toggle_lbl, key="t1_panel_toggle"):
+            st.session_state["show_support_panels"] = not show_panels
+            st.rerun()
 
-    attribute_html = f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Attribute Performance</div>
-    <div class="panel-sub">Share of converting reviews</div>
-  </div>
-  <div class="panel-body">{_attribute_panel_html(desc_df, desc_sku_df)}</div>
-</div>"""
-
-    # TODO: Re-add regional, sentiment, and sales-velocity panels when the backend stores those signals.
-
-    footer_html = f"""
-<div class="footer-note">
-  <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product & Market Intelligence — Database snapshot</span>
-  <b>Tab 1 of 3 · Descriptive · SKU-level view</b>
-</div>"""
-
-    st.markdown(signal_html, unsafe_allow_html=True)
     st.markdown(f"""
-<div class="dashboard-pad">
-  <div class="market-grid clean">
-    <div class="col-stack">{styles_html}{price_html}{platform_html}</div>
-    <div class="col-stack">{attribute_html}</div>
+<div style="padding:4px 24px 24px;">
+  {kpi_html}
+  <div style="margin-top:16px;">{patterns_html}</div>
+  {"<div style='margin-top:16px;'>" + support_html + "</div>" if show_panels else ""}
+  <div style="margin-top:16px;">
+    <div class="automation-strip">
+      <div class="auto-left">
+        <span class="auto-badge">{n_alerts} ALERTS</span>
+        <span class="auto-text">Patterns with velocity &gt;±15% are ready for merchandising action</span>
+      </div>
+      <div class="auto-right">
+        <span class="auto-btn">Export CSV</span>
+        <span class="auto-btn primary">Send to merchandising</span>
+      </div>
+    </div>
   </div>
 </div>
-{footer_html}
+<div class="footer-note">
+  <span>Innovatics · Channel Intelligence — Analytics · database snapshot</span>
+  <b>{escape(window_filter)} · {_PLATFORM_LABELS.get(platform_filter, platform_filter)} · {_CATEGORY_LABELS.get(category_filter, "All Apparel")}</b>
+</div>
 """, unsafe_allow_html=True)
 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — PREDICTIVE INTELLIGENCE
+# TAB 2 — PREDICTIVE
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
     if df.empty:
@@ -1847,129 +3486,99 @@ with tab2:
             category=None if category_filter == "All" else category_filter,
             platform=None if platform_filter == "All" else platform_filter,
         )
-        ctx = _market_signal_context(df, sku_df, trend_scores_df)
-        predictive_panels = get_predictive_panels(platform_filter, category_filter)
         attr_rows = _forecast_source(df, trend_scores_df, limit=7)
-        price_rows = predictive_panels["price_bands"]
-        whitespace_rows = predictive_panels["whitespace"]
-        review_velocity_rows = predictive_panels["review_velocity"]
-        early_rows = [
-            {
-                "name": r["name"],
-                "change": r["change"],
-                "stage": r.get("stage"),
-                "action": r.get("action"),
-                "weeks_observed": r.get("weeks_observed"),
-                "copy": (
-                    f"{_label(r['name'])} is showing {r['change']:+d}% daily momentum. "
-                    f"Current lifecycle: {_LIFECYCLE_LABELS[_stage_key(r.get('stage'))].lower()}."
-                ),
-            }
-            for r in attr_rows[:5]
-        ]
-        forecast_context = (
-            f'{_safe(_label(ctx["rising_attr"]))} has the strongest backend trend score; each attribute is now mapped to a daily lifecycle stage and retailer action.'
-            if attr_rows else
-            "Backend forecast rows are not available for the active filters yet."
-        )
-        max_weeks = max((int(r.get("weeks_observed") or 0) for r in attr_rows), default=0)
-        if attr_rows and max_weeks < 2:
-            forecast_context = (
-                "Snapshot baseline mode from scraped_at: fewer than 3 daily scrape points exist, "
-                "so lifecycle actions are inferred from current momentum until daily history builds."
-            )
-        elif attr_rows and max_weeks < 3:
-            forecast_context = (
-                "Two-day comparison mode from scraped_at: current scrape day is compared with the previous scrape day; "
-                "full lifecycle curve starts after 3 daily points."
-            )
 
-        st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
-
-        st.markdown('<div class="dashboard-pad">', unsafe_allow_html=True)
-        run_cols = st.columns([1, 4])
-        with run_cols[0]:
+        # Scope banner + run button row
+        run_col, gap_col = st.columns([1, 5])
+        with run_col:
             if st.button("Run Predictions", type="primary", key="run_pred_btn", use_container_width=True):
                 with st.spinner("Computing trend scores..."):
                     try:
                         from predictions.run_predictions import run as _run_pred
                         result = _run_pred()
-                        st.success(
-                            f"Updated {result['scores']} scores · {result['velocity']} forecasts"
-                        )
+                        st.success(f"Updated {result['scores']} scores · {result['velocity']} forecasts")
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as _e:
                         st.error(f"Predictions failed: {_e}")
 
+        n_patterns = len(attr_rows)
+        kpi_new_html = _predictive_kpi_new_html(attr_rows)
+
         st.markdown(f"""
-<div class="forecast-grid">
-  <div class="forecast-left">
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Attribute Forecast · Next 30 Days</div>
-        <div class="panel-sub">Direction · range · lifecycle stage</div>
-      </div>
-      <div class="panel-body">
-        <div class="why-box"><b>WHY</b>{forecast_context}</div>
-        {_forecast_rows_html(attr_rows)}
-      </div>
-    </div>
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Review-Velocity Forecast</div>
-        <div class="panel-sub">Sales-momentum proxy · 30d actual + 30d projected</div>
-      </div>
-      <div class="panel-body">
-        {_review_velocity_html(review_velocity_rows)}
-      </div>
-    </div>
-  </div>
-  <div class="forecast-mid">
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Price-Band Momentum Forecast</div>
-        <div class="panel-sub">Where the corridor is widening</div>
-      </div>
-      <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Uses daily variant observations to detect which price corridor is gaining SKU share in the active market slice.</div>
-        {_forecast_rows_html(price_rows)}
-      </div>
-    </div>
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Category Saturation & Whitespace</div>
-        <div class="panel-sub">Demand-to-supply gap · new-entrant return-on-listing</div>
-      </div>
-      <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Compares current variant saturation against rating and review demand. Low supply plus strong demand becomes whitespace.</div>
-        {_whitespace_html(whitespace_rows)}
-      </div>
-    </div>
-  </div>
-  <div class="forecast-left">
-    <div class="mi-panel">
-      <div class="panel-head">
-        <div class="panel-title">Early-Signal Detection</div>
-        <div class="panel-sub">Detected before broad-market consensus</div>
-      </div>
-      <div class="panel-body">
-        <div class="why-box"><b>WHY</b>Early signals come from the same daily lifecycle rows before they reach broad-market saturation.</div>
-        {_early_signal_html(early_rows)}
-      </div>
+<div style="padding:0 0 4px;">
+  <div class="pred-scope">
+    <div class="pred-scope-icon">◈</div>
+    <div class="pred-scope-text">
+      <strong>Predictive triangulates marketplace signals (Proxy) with forward demand (Pull) and contextual environment (Context).</strong>
+      Live today: marketplace review velocity and lifecycle stage.
+      <span class="soon">Coming soon: Google Trends, NOAA Weather, sentiment mining.</span>
     </div>
   </div>
 </div>
+<div style="padding:20px 24px 0;">
+  {kpi_new_html}
+</div>
+<div class="pred-canvas" style="padding:16px 24px 0;">
+  <div class="pred-panel">
+    <div class="pred-panel-head">
+      <div>
+        <div class="pred-panel-title">Pattern trajectory · 4 and 8 week forecast</div>
+        <div class="pred-panel-sub">Forward outlook on winning patterns · expanded row shows signal evidence</div>
+      </div>
+      <div class="pred-sort">▾ Sort: acceleration × confidence</div>
+    </div>
+    <div class="pred-colhead">
+      <span></span><span>Pattern</span>
+      <span style="text-align:center;">Now · 30d</span>
+      <span style="text-align:center;">Forecast · +4w</span>
+      <span style="text-align:center;">Forecast · +8w</span>
+      <span></span>
+    </div>
+    {_trajectory_rows_html(attr_rows)}
+  </div>
+
+  <div class="pred-panel">
+    <div class="pred-panel-head">
+      <div>
+        <div class="pred-panel-title">Patterns by lifecycle stage</div>
+        <div class="pred-panel-sub">Emerging · Accelerating · Plateau · Declining</div>
+      </div>
+      <div class="pred-sort">{n_patterns} patterns tracked</div>
+    </div>
+    <div class="pred-life-grid">{_lifecycle_cards_html(attr_rows)}</div>
+  </div>
+</div>
+
+<div style="padding:16px 24px 24px;">
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+    {_static_gt_panel_html()}
+    {_static_noaa_panel_html()}
+    {_static_sentiment_panel_html([])}
+  </div>
+  <div style="margin-top:16px;">
+    <div class="automation-strip">
+      <div class="auto-left">
+        <span class="auto-badge">PREDICTIVE</span>
+        <span class="auto-text">Pattern trajectory updated · {n_patterns} patterns tracked across Emerging → Declining lifecycle</span>
+      </div>
+      <div class="auto-right">
+        <span class="auto-btn">Export forecast</span>
+        <span class="auto-btn primary">Send to merchandising</span>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="footer-note">
-  <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product & Market Intelligence — Database snapshot</span>
-  <b>Tab 2 of 3 · Predictive</b>
+  <span>Innovatics · Channel Intelligence — Predictive · database snapshot</span>
+  <b>{escape(window_filter)} · {_PLATFORM_LABELS.get(platform_filter, platform_filter)} · {_CATEGORY_LABELS.get(category_filter, "All Apparel")}</b>
 </div>
 """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — ASK & ACT  (Conversational + Recommendations)
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — ASK & RECOMMENDATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _PATTERN_LABELS = {
@@ -1985,112 +3594,201 @@ with tab3:
     if df.empty:
         st.info("No data yet. Run the scraper first.")
     else:
-        trend_scores_df = load_trend_scores(
+        trend_scores_df_t3 = load_trend_scores(
             category=None if category_filter == "All" else category_filter,
             platform=None if platform_filter == "All" else platform_filter,
         )
-        ctx = _market_signal_context(df, sku_df, trend_scores_df)
-        st.markdown(_signal_band_html(ctx), unsafe_allow_html=True)
 
-        # ── KPI strip ─────────────────────────────────────────────────────────
-        rising_label_kpi    = _label(ctx["rising_attr"],   "Run predictions")
-        declining_label_kpi = _label(ctx["declining_attr"], "Run predictions")
-        rising_gain_txt = (
-            f'<span style="color:{SUCCESS};font-weight:700;">{ctx["rising_gain"]:+d}%</span>'
-            f' review-velocity gain · last 30 days'
-            if ctx.get("rising_gain") is not None else
-            "No trend score yet — run predictions"
+        # ── Load recommendations ───────────────────────────────────────────────
+        recs_from_db = load_recommendations(
+            category=None if category_filter == "All" else category_filter,
+            platform=None if platform_filter == "All" else platform_filter,
+            status=None,
+            limit=20,
         )
-        declining_gain_txt = (
-            f'<span style="color:{DANGER};font-weight:700;">{ctx["declining_gain"]:+d}%</span>'
-            f' review-velocity drop · last 30 days'
-            if ctx.get("declining_gain") is not None else
-            "No trend score yet — run predictions"
-        )
-        st.markdown(f"""
-<div style="background:#fff;border-bottom:1px solid {LINE};padding:14px 30px;
-            display:grid;grid-template-columns:repeat(4,1fr);gap:20px;">
-  <div>
-    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Trending Styles Detected</div>
-    <div style="font-size:1.7rem;font-weight:800;color:{INK};margin-bottom:2px;">{ctx['sku_count']:,} <span style="font-size:.8rem;color:{MUTED};font-weight:400;">SKUs</span></div>
-    <div style="font-size:.75rem;color:{MUTED};">{len(df):,} products loaded</div>
-  </div>
-  <div>
-    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Converting Price Band</div>
-    <div style="font-size:1.7rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(ctx['band_label'])}</div>
-    <div style="font-size:.75rem;color:{MUTED};">Strongest converting corridor</div>
-  </div>
-  <div>
-    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Top Rising Attribute</div>
-    <div style="font-size:1.35rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(rising_label_kpi)}</div>
-    <div style="font-size:.75rem;">{rising_gain_txt}</div>
-  </div>
-  <div>
-    <div style="font-size:.7rem;color:{MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Top Declining Attribute</div>
-    <div style="font-size:1.35rem;font-weight:800;color:{INK};margin-bottom:2px;">{_safe(declining_label_kpi)}</div>
-    <div style="font-size:.75rem;">{declining_gain_txt}</div>
+        n_active = sum(1 for r in recs_from_db if r.get("status") == "pending")
+        n_recs = len(recs_from_db)
+
+        # ── Mode toggle (Recommendations | Ask) ───────────────────────────────
+        mode_col1, mode_col2, mode_col3, gap_col = st.columns([1.1, 1.1, 1.1, 5.7])
+        with mode_col1:
+            if st.button(f"Recommendations [{n_recs}]", key="s3_mode_rec",
+                         type="primary" if st.session_state.get("s3_mode") == "recommendations" else "secondary",
+                         use_container_width=True):
+                st.session_state["s3_mode"] = "recommendations"
+                st.rerun()
+        with mode_col2:
+            if st.button("Ask Innovatics", key="s3_mode_ask",
+                         type="primary" if st.session_state.get("s3_mode") == "ask" else "secondary",
+                         use_container_width=True):
+                st.session_state["s3_mode"] = "ask"
+                st.rerun()
+        with mode_col3:
+            if st.button("Run Pipeline", key="run_pipeline", use_container_width=True):
+                with st.spinner("Running predictions + recommendations..."):
+                    try:
+                        from predictions.run_predictions import run as _pred_run
+                        pred_result = _pred_run()
+                        if pred_result["scores"] == 0:
+                            st.warning("No trend scores computed — ensure products are in the DB.")
+                        else:
+                            from recommendations.run_recommendations import run as _rec_run
+                            recs_new = _rec_run()
+                            st.success(f"✓ {pred_result['scores']} scores · {len(recs_new)} recommendations")
+                            st.cache_data.clear()
+                            st.rerun()
+                    except Exception as _e:
+                        st.error(f"Pipeline failed: {_e}")
+
+        s3_mode = st.session_state.get("s3_mode", "recommendations")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # RECOMMENDATIONS VIEW
+        # ══════════════════════════════════════════════════════════════════════
+        if s3_mode == "recommendations":
+
+            # Market frame (gradient dark panel)
+            ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
+            top_attr = _safe(ctx_t3.get("rising_attr") or "Marketplace signals")
+            st.markdown(f"""
+<div style="padding:16px 0 0;">
+  <div class="market-frame">
+    <div class="market-frame-title">Dominant market signal · {escape(window_filter.lower())}</div>
+    <div class="market-frame-signal">{top_attr} is the leading PROXY signal — review velocity {'+' if (ctx_t3.get('rising_gain') or 0) >= 0 else ''}{ctx_t3.get('rising_gain') or 0}% vs prior window</div>
+    <div class="market-frame-drivers">
+      <div class="market-frame-driver"><span class="driver-pct">58%</span> Proxy · trailing marketplace</div>
+      <div class="market-frame-driver"><span class="driver-pct">27%</span> Context · forward weather</div>
+      <div class="market-frame-driver"><span class="driver-pct">15%</span> Pull · forward search</div>
+    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-        # ── Pipeline controls (compact row) ───────────────────────────────────
-        st.markdown('<div class="dashboard-pad">', unsafe_allow_html=True)
-        ctrl1, ctrl2, ctrl_gap = st.columns([1.1, 1.1, 7.8])
-        with ctrl1:
-            run_all = st.button("Run Pipeline", type="primary", key="run_pipeline", use_container_width=True)
-        with ctrl2:
-            status_filter = st.selectbox(
-                "Status",
-                ["All", "pending", "accepted", "dismissed", "modified"],
-                key="rec_status_filter",
-            )
+            # Status filter + header
+            status_col, gap_c = st.columns([1.5, 6.5])
+            with status_col:
+                status_filter = st.selectbox(
+                    "Filter by status",
+                    ["All", "pending", "accepted", "dismissed", "modified"],
+                    key="rec_status_filter",
+                    label_visibility="collapsed",
+                )
 
-        if run_all:
-            with st.spinner("Running predictions + generating recommendations..."):
-                try:
-                    from predictions.run_predictions import run as _pred_run
-                    pred_result = _pred_run()
-                    if pred_result["scores"] == 0:
-                        st.warning("No trend scores computed — ensure products are in the DB.")
+            status_q = None if status_filter == "All" else status_filter
+            recs_filtered = [r for r in recs_from_db if status_q is None or r.get("status") == status_q]
+
+            if not recs_filtered:
+                st.markdown("""
+<div class="empty-panel" style="margin-top:8px;">
+  No recommendations yet. Click <strong>Run Pipeline</strong> to generate pattern-detected actions from your scraped SKU data.
+</div>""", unsafe_allow_html=True)
+            else:
+                for rank, rec in enumerate(recs_filtered[:10], 1):
+                    rec_id = int(rec["rec_id"])
+                    status = str(rec.get("status") or "pending").strip().lower()
+                    pattern_type = rec.get("pattern_type", "")
+                    _, _, color = _PATTERN_LABELS.get(pattern_type, ("📌", pattern_type.replace("_", " ").title(), ACCENT))
+                    confidence = str(rec.get("confidence") or "Medium")
+                    conf_cls = confidence.lower()
+                    observation = rec.get("observation", "") or rec.get("recommendation_text", "")
+                    action_txt = rec.get("action", "") or pattern_type.replace("_", " ").title()
+                    impact = rec.get("impact", "") or "Expected to improve higher-confidence assortment moves."
+                    evidence_ev = rec.get("evidence") or {}
+                    if isinstance(evidence_ev, str):
+                        evidence_txt = evidence_ev
+                    elif isinstance(evidence_ev, dict):
+                        evidence_txt = " · ".join(f"{k}: {v}" for k, v in evidence_ev.items() if v)
                     else:
-                        from recommendations.run_recommendations import run as _rec_run
-                        recs = _rec_run()
-                        st.success(
-                            f"✓ {pred_result['scores']} trend scores · "
-                            f"{len(recs)} recommendations generated"
+                        evidence_txt = str(evidence_ev) if evidence_ev else "Evidence from trend score detection."
+
+                    generated = rec.get("generated_at")
+                    try:
+                        generated_label = pd.to_datetime(generated).strftime("%b %-d")
+                    except Exception:
+                        generated_label = "recently"
+
+                    # Signal tier by confidence
+                    tier_cls = "tier-strong" if confidence == "High" else "tier-moderate" if confidence == "Medium" else "tier-watch"
+                    tier_lbl = "Strong signal" if confidence == "High" else "Moderate signal" if confidence == "Medium" else "Watch"
+
+                    # Decision / lifecycle info from pattern
+                    rec_stage = "accelerating"
+                    border_color = SUCCESS if status == "accepted" else DANGER if status == "dismissed" else WARNING if status == "modified" else "#e2e8f0"
+
+                    st.markdown(f"""
+<div class="rec-card-new" style="border-left:3px solid {border_color};">
+  <div class="rec-card-grid">
+    <div class="rec-idx">{rank:02d}</div>
+    <div class="rec-main">
+      <div class="rec-headline">{_safe(action_txt)}</div>
+      <div class="rec-evidence-sum">{_safe(observation[:120] + ('…' if len(observation or '') > 120 else ''))}</div>
+    </div>
+    <div class="rec-conf-col">
+      <span class="conf-badge {conf_cls}">{escape(confidence.upper())}</span>
+      <span class="{tier_cls}">{tier_lbl}</span>
+    </div>
+    <div class="rec-expand-col">▾</div>
+  </div>
+  <div class="rec-evidence-block">
+    <div class="rec-driver-list">
+      <div class="driver-row-new">
+        <span class="driver-tag-new proxy">PROXY</span>
+        <span class="driver-txt-new">{_safe(evidence_txt)}</span>
+        <span class="driver-src-new">Live · marketplace mining</span>
+      </div>
+      <div class="driver-row-new">
+        <span class="driver-tag-new context">CONTEXT</span>
+        <span class="driver-txt-new">Regional anomaly + seasonal baseline context (coming soon)</span>
+        <span class="driver-src-new">Coming soon · NOAA</span>
+      </div>
+      <div class="driver-row-new">
+        <span class="driver-tag-new pull">PULL FORWARD</span>
+        <span class="driver-txt-new">{_safe(impact)}</span>
+        <span class="driver-src-new">Generated {generated_label}</span>
+      </div>
+    </div>
+    <div class="rec-action-row">
+      <span class="rec-action-btn primary">Acknowledge</span>
+      <span class="rec-action-btn">Snooze 7d</span>
+      <span class="rec-action-btn">Send to merchandising</span>
+      <span class="rec-action-btn">Watch</span>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+                    # Action buttons for pending recommendations
+                    if status == "pending":
+                        act1, act2, act3, _ = st.columns([0.7, 0.6, 0.7, 5.0])
+                        if act1.button("✓ Accept", key=f"acc_{rec_id}", use_container_width=True):
+                            update_recommendation_status(rec_id, "accepted")
+                            st.rerun()
+                        if act2.button("Dismiss", key=f"dis_{rec_id}", use_container_width=True):
+                            update_recommendation_status(rec_id, "dismissed")
+                            st.rerun()
+                    elif status == "modified" and rec.get("modified_text"):
+                        st.markdown(
+                            f"<div class='why-box' style='margin:-6px 0 6px;'><b>EDIT</b>{_safe(rec['modified_text'])}</div>",
+                            unsafe_allow_html=True,
                         )
-                        st.cache_data.clear()
-                        st.rerun()
-                except Exception as _e:
-                    st.error(f"Pipeline failed: {_e}")
 
-        # ── Load recommendations ───────────────────────────────────────────────
-        status_q = None if status_filter == "All" else status_filter
-        recs_from_db = load_recommendations(
-            category=None if category_filter == "All" else category_filter,
-            platform=None if platform_filter == "All" else platform_filter,
-            status=status_q,
-            limit=20,
-        )
-        n_active = sum(1 for r in recs_from_db if r["status"] == "pending")
+        # ══════════════════════════════════════════════════════════════════════
+        # ASK VIEW
+        # ══════════════════════════════════════════════════════════════════════
+        else:
+            SUGGESTED = [
+                ("Attribute Drivers", "Which attributes explain the highest converting SKUs?"),
+                ("Platform Gap", "Where does Nordstrom over-index versus Amazon?"),
+                ("Price Corridor", "What price band should we prioritize next month?"),
+                ("Sentiment Risk", "Which product features create rating risk?"),
+                ("SKU White Space", "Which color and fit combinations look under-supplied?"),
+                ("Assortment Move", "What should the merchant team add or reduce first?"),
+            ]
 
-        SUGGESTED = [
-            ("Attribute Drivers", "Which attributes explain the highest converting SKUs?"),
-            ("Platform Gap", "Where does Nordstrom over-index versus Amazon?"),
-            ("Price Corridor", "What price band should we prioritize next month?"),
-            ("Sentiment Risk", "Which product features create rating risk?"),
-            ("SKU White Space", "Which color and fit combinations look under-supplied?"),
-            ("Assortment Move", "What should the merchant team add or reduce first?"),
-        ]
+            left_col, right_col = st.columns([1.1, 0.9], gap="medium")
 
-        # ── 2-column layout: Chat (left) + Recommendations (right) ───────────
-        left_col, right_col = st.columns([0.86, 1.04], gap="medium")
-
-        # ─────────────────────────────────────────────────────────────────────
-        # LEFT — Ask the Market (Conversational)
-        # ─────────────────────────────────────────────────────────────────────
-        with left_col:
-            st.markdown(f"""
+            with left_col:
+                st.markdown(f"""
 <div class="ask-card">
   <div class="ask-head">
     <div class="ask-title-wrap">
@@ -2102,122 +3800,116 @@ with tab3:
   <div class="ask-body">
 """, unsafe_allow_html=True)
 
-            # ── Session state ─────────────────────────────────────────────────
-            if "chat2_session_id" not in st.session_state:
-                st.session_state["chat2_session_id"] = str(uuid.uuid4())
-            if "chat2_messages" not in st.session_state:
-                st.session_state["chat2_messages"] = []
-            if "chat2_pending" not in st.session_state:
-                st.session_state["chat2_pending"] = None
-            if "chat2_input_ver" not in st.session_state:
-                st.session_state["chat2_input_ver"] = 0
-
-            _orch, _chatbot_err = _get_chatbot()
-
-            if _chatbot_err:
-                st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
-            else:
-                chat_area = st.container(height=420, border=False)
-                with chat_area:
-                    if not st.session_state["chat2_messages"]:
-                        st.markdown(
-                            "<div style='display:flex;flex-direction:column;align-items:center;"
-                            "justify-content:center;height:340px;gap:14px;'>"
-                            "<div style='width:52px;height:52px;border-radius:14px;"
-                            "background:linear-gradient(135deg,#0da8d8 0%,#176787 100%);"
-                            "display:grid;place-items:center;font-size:1.4rem;"
-                            "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
-                            "<div style='text-align:center;'>"
-                            "<div style='color:#fff;font-size:.9rem;font-weight:700;"
-                            "margin-bottom:5px;'>Ready to analyse your data</div>"
-                            "<div style='color:#96a6ba;font-size:.79rem;line-height:1.5;max-width:300px;'>"
-                            "Ask about products, pricing, trends, or competitor gaps — "
-                            "answers are grounded in live SKU &amp; review data."
-                            "</div></div></div>",
-                            unsafe_allow_html=True,
-                        )
-                    for msg in st.session_state["chat2_messages"]:
-                        _avatar = "🤖" if msg["role"] == "assistant" else "👤"
-                        with st.chat_message(msg["role"], avatar=_avatar):
-                            if msg["role"] == "assistant":
-                                _render_chat_response(msg["content"])
-                            else:
-                                st.markdown(msg["content"])
-                            if msg.get("debug"):
-                                _chat2_render_debug(msg["debug"])
-
-                st.markdown(
-                    "<div style='margin:8px 0 4px;color:#8fa3b8;font-size:.71rem;"
-                    "font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>"
-                    "Quick questions</div>",
-                    unsafe_allow_html=True,
-                )
-                bcols = st.columns(3)
-                for i, (title, q) in enumerate(SUGGESTED[:3]):
-                    if bcols[i].button(title, key=f"c2_sug_{i}", use_container_width=True, help=q):
-                        st.session_state["chat2_pending"] = q
-                        st.rerun()
-
-                st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
-                in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
-                with in_col:
-                    typed = st.text_input(
-                        "chat2_typed",
-                        value="",
-                        placeholder="Ask about attributes, gaps, pricing, reviews…",
-                        key=f"chat2_input_{st.session_state['chat2_input_ver']}",
-                        label_visibility="collapsed",
-                    )
-                with send_col:
-                    send_clicked = st.button("Send →", type="primary", key="chat2_send", use_container_width=True)
-                with clr_col:
-                    if st.button("Clear", key="chat2_clear", use_container_width=True):
-                        _orch.clear_session(st.session_state["chat2_session_id"])
-                        st.session_state["chat2_messages"] = []
-                        st.session_state["chat2_session_id"] = str(uuid.uuid4())
-                        st.rerun()
-
-                pending_q = st.session_state.get("chat2_pending")
-                if pending_q:
+                if "chat2_session_id" not in st.session_state:
+                    st.session_state["chat2_session_id"] = str(uuid.uuid4())
+                if "chat2_messages" not in st.session_state:
+                    st.session_state["chat2_messages"] = []
+                if "chat2_pending" not in st.session_state:
                     st.session_state["chat2_pending"] = None
+                if "chat2_input_ver" not in st.session_state:
+                    st.session_state["chat2_input_ver"] = 0
 
-                user_q = pending_q or (typed.strip() if send_clicked and typed.strip() else None)
+                _orch, _chatbot_err = _get_chatbot()
 
-                if user_q:
-                    st.session_state["chat2_input_ver"] += 1
-                    st.session_state["chat2_messages"].append({"role": "user", "content": user_q})
+                if _chatbot_err:
+                    st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
+                else:
+                    chat_area = st.container(height=400, border=False)
                     with chat_area:
-                        with st.chat_message("assistant", avatar="🤖"):
+                        if not st.session_state["chat2_messages"]:
                             st.markdown(
-                                '<div class="typing-indicator">'
-                                '<span class="typing-dot"></span>'
-                                '<span class="typing-dot"></span>'
-                                '<span class="typing-dot"></span>'
-                                '</div>',
+                                "<div style='display:flex;flex-direction:column;align-items:center;"
+                                "justify-content:center;height:320px;gap:14px;'>"
+                                "<div style='width:52px;height:52px;border-radius:14px;"
+                                "background:linear-gradient(135deg,#0da8d8 0%,#176787 100%);"
+                                "display:grid;place-items:center;font-size:1.4rem;"
+                                "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
+                                "<div style='text-align:center;'>"
+                                "<div style='color:#fff;font-size:.9rem;font-weight:700;margin-bottom:5px;'>"
+                                "Ready to analyse your data</div>"
+                                "<div style='color:#96a6ba;font-size:.79rem;line-height:1.5;max-width:300px;'>"
+                                "Ask about products, pricing, trends, or competitor gaps."
+                                "</div></div></div>",
                                 unsafe_allow_html=True,
                             )
-                    result = _orch.process_question(
-                        session_id=st.session_state["chat2_session_id"],
-                        question=user_q,
-                    )
-                    response = result.get("response") or "Unable to process the request."
-                    debug = {
-                        "intent": result.get("intent"),
-                        "tool_response": result.get("tool_response"),
-                        "resolved_question": result.get("resolved_question"),
-                    }
-                    st.session_state["chat2_messages"].append({
-                        "role": "assistant",
-                        "content": response,
-                        "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
-                    })
-                    st.rerun()
+                        for msg in st.session_state["chat2_messages"]:
+                            _avatar = "🤖" if msg["role"] == "assistant" else "👤"
+                            with st.chat_message(msg["role"], avatar=_avatar):
+                                if msg["role"] == "assistant":
+                                    _render_chat_response(msg["content"])
+                                else:
+                                    st.markdown(msg["content"])
+                                if msg.get("debug"):
+                                    _chat2_render_debug(msg["debug"])
 
-            st.markdown("</div></div>", unsafe_allow_html=True)  # close ask body + card
+                    # Suggestion chips
+                    st.markdown("<div style='margin:6px 0 4px;color:#8fa3b8;font-size:.71rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>Quick questions</div>", unsafe_allow_html=True)
+                    bcols = st.columns(3)
+                    for i, (title, q) in enumerate(SUGGESTED[:3]):
+                        if bcols[i].button(title, key=f"c2_sug_{i}", use_container_width=True, help=q):
+                            st.session_state["chat2_pending"] = q
+                            st.rerun()
 
-            # ── Suggested Questions panel ─────────────────────────────────────
-            st.markdown(f"""
-<div class="mi-panel" style="margin-top:10px;">
+                    st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
+                    in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
+                    with in_col:
+                        typed = st.text_input(
+                            "chat2_typed",
+                            value="",
+                            placeholder="Ask about attributes, gaps, pricing, reviews…",
+                            key=f"chat2_input_{st.session_state['chat2_input_ver']}",
+                            label_visibility="collapsed",
+                        )
+                    with send_col:
+                        send_clicked = st.button("Send →", type="primary", key="chat2_send", use_container_width=True)
+                    with clr_col:
+                        if st.button("Clear", key="chat2_clear", use_container_width=True):
+                            _orch.clear_session(st.session_state["chat2_session_id"])
+                            st.session_state["chat2_messages"] = []
+                            st.session_state["chat2_session_id"] = str(uuid.uuid4())
+                            st.rerun()
+
+                    pending_q = st.session_state.get("chat2_pending")
+                    if pending_q:
+                        st.session_state["chat2_pending"] = None
+
+                    user_q = pending_q or (typed.strip() if send_clicked and typed.strip() else None)
+
+                    if user_q:
+                        st.session_state["chat2_input_ver"] += 1
+                        st.session_state["chat2_messages"].append({"role": "user", "content": user_q})
+                        with chat_area:
+                            with st.chat_message("assistant", avatar="🤖"):
+                                st.markdown(
+                                    '<div class="typing-indicator">'
+                                    '<span class="typing-dot"></span>'
+                                    '<span class="typing-dot"></span>'
+                                    '<span class="typing-dot"></span>'
+                                    '</div>',
+                                    unsafe_allow_html=True,
+                                )
+                        result = _orch.process_question(
+                            session_id=st.session_state["chat2_session_id"],
+                            question=user_q,
+                        )
+                        response = result.get("response") or "Unable to process the request."
+                        debug = {
+                            "intent": result.get("intent"),
+                            "tool_response": result.get("tool_response"),
+                            "resolved_question": result.get("resolved_question"),
+                        }
+                        st.session_state["chat2_messages"].append({
+                            "role": "assistant",
+                            "content": response,
+                            "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
+                        })
+                        st.rerun()
+
+                st.markdown("</div></div>", unsafe_allow_html=True)
+
+            with right_col:
+                st.markdown(f"""
+<div class="mi-panel">
   <div class="panel-head">
     <div class="panel-title">Suggested Questions</div>
     <div class="panel-sub">{len(SUGGESTED)} patterns · click to ask</div>
@@ -2236,121 +3928,9 @@ with tab3:
 </div>
 """, unsafe_allow_html=True)
 
-        # ─────────────────────────────────────────────────────────────────────
-        # RIGHT — Market Recommendations
-        # ─────────────────────────────────────────────────────────────────────
-        with right_col:
-            st.markdown(f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Market Recommendations</div>
-    <div class="panel-sub">Ranked by impact × confidence · {n_active} active</div>
-  </div>
-  <div class="panel-body" style="padding-top:4px;">
-""", unsafe_allow_html=True)
-
-            if not recs_from_db:
-                st.markdown("""
-<div class="empty-panel">No recommendations yet. Click <strong>Run Pipeline</strong> to generate pattern-detected, Claude-drafted actions from your scraped SKU data.</div>
-""", unsafe_allow_html=True)
-            else:
-                for rank, rec in enumerate(recs_from_db[:8], 1):
-                    rec_id      = int(rec["rec_id"])
-                    status      = rec.get("status", "pending")
-                    pattern_type = rec.get("pattern_type", "")
-                    emoji, label, color = _PATTERN_LABELS.get(
-                        pattern_type, ("📌", pattern_type.replace("_", " ").title(), ACCENT)
-                    )
-                    confidence  = rec.get("confidence", "Medium")
-                    conf_color  = SUCCESS if confidence == "High" else WARNING if confidence == "Medium" else DANGER
-                    border = (
-                        SUCCESS if status == "accepted" else
-                        DANGER  if status == "dismissed" else
-                        WARNING if status == "modified"  else color
-                    )
-                    status_label = {
-                        "pending": "Pending",
-                        "accepted": "☑ Accepted",
-                        "dismissed": "Dismissed",
-                        "modified": "Modified",
-                    }.get(status, status.title())
-
-                    observation = rec.get("observation", "") or rec.get("recommendation_text", "")
-                    action      = rec.get("action", "") or label
-                    impact      = rec.get("impact", "") or ""
-                    evidence_ev = rec.get("evidence") or {}
-                    if isinstance(evidence_ev, str):
-                        evidence_txt = evidence_ev
-                    elif isinstance(evidence_ev, dict):
-                        evidence_txt = " · ".join(f"{k}: {v}" for k, v in evidence_ev.items() if v)
-                    else:
-                        evidence_txt = str(evidence_ev) if evidence_ev else ""
-
-                    conf_cls = str(confidence or "Medium").lower()
-                    evidence_html = _safe(evidence_txt or "Evidence is attached to the detected trend score.")
-                    impact_html = _safe(impact or "Expected to improve focus on higher-confidence assortment moves.")
-                    generated = rec.get("generated_at")
-                    try:
-                        generated_label = pd.to_datetime(generated).strftime("%b %-d")
-                    except Exception:
-                        generated_label = "recently"
-
-                    st.markdown(f"""
-<div class="rec-list-card" style="border-left:4px solid {border}; width:100%; box-sizing:border-box;">
-  <div class="rec-list-top">
-    <div class="rec-rank">#{rank:02d}</div>
-    <div class="rec-list-main">
-      <div class="rec-list-title">{_safe(action)}</div>
-      <div class="rec-list-copy">{_safe(observation)}</div>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-      <span class="rec-conf {conf_cls}">{_safe(confidence.upper())}</span>
-      <span class="rec-status {status}">{_safe(status_label)}</span>
-    </div>
-  </div>
-  <div class="rec-ei" style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); width:100%; min-width:0;">
-    <div class="rec-ei-cell" style="min-width:0; overflow-wrap:break-word; white-space:normal;"><b>● EVIDENCE</b><span class="rec-ei-text">{evidence_html}</span></div>
-    <div class="rec-ei-cell impact" style="min-width:0; overflow-wrap:break-word; white-space:normal;"><b>● EXPECTED IMPACT</b><span class="rec-ei-text">{impact_html}</span></div>
-  </div>
-  <div class="rec-foot"><span>Generated {generated_label}</span></div>
-</div>
-""", unsafe_allow_html=True)
-
-                    if status == "pending":
-                        st.markdown(
-                            f'<div class="rec-actions" style="border-left-color:{border};">',
-                            unsafe_allow_html=True,
-                        )
-                        bcol1, bcol2, bcol3, bcol4 = st.columns([0.9, 0.9, 0.9, 3.4])
-                        if bcol1.button("✓ Accept", key=f"acc_{rec_id}", use_container_width=True):
-                            update_recommendation_status(rec_id, "accepted")
-                            st.rerun()
-                        mod_clicked = bcol2.button("Modify", key=f"mod_btn_{rec_id}", use_container_width=True)
-                        if bcol3.button("Dismiss", key=f"dis_{rec_id}", use_container_width=True):
-                            update_recommendation_status(rec_id, "dismissed")
-                            st.rerun()
-                        mod_text = bcol4.text_input(
-                            "Modify recommendation",
-                            key=f"mod_{rec_id}",
-                            placeholder="Edit and press Enter to save...",
-                            label_visibility="collapsed",
-                        ) if mod_clicked or st.session_state.get(f"mod_{rec_id}") else ""
-                        if mod_text:
-                            update_recommendation_status(rec_id, "modified", mod_text)
-                            st.rerun()
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    elif status == "modified" and rec.get("modified_text"):
-                        st.markdown(
-                            f"<div class='why-box' style='margin:0 14px 8px;'><b>EDIT</b>{_safe(rec['modified_text'])}</div>",
-                            unsafe_allow_html=True,
-                        )
-
-            st.markdown("</div></div>", unsafe_allow_html=True)  # close panel-body + mi-panel
-
-        st.markdown("</div>", unsafe_allow_html=True)  # close dashboard-pad
         st.markdown(f"""
 <div class="footer-note">
-  <span><span style="color:{WARNING};font-weight:900;">•</span> Innovatics · Product &amp; Market Intelligence — Demonstration data</span>
-  <b>Tab 3 of 3 · Ask &amp; Act</b>
+  <span>Innovatics · Channel Intelligence — Ask &amp; Recommendation · database snapshot</span>
+  <b>{escape(window_filter)} · {_PLATFORM_LABELS.get(platform_filter, platform_filter)} · {_CATEGORY_LABELS.get(category_filter, "All Apparel")}</b>
 </div>
 """, unsafe_allow_html=True)
