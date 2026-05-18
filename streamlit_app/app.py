@@ -37,7 +37,7 @@ from streamlit_app.db import (
     load_trend_scores, load_recommendations, update_recommendation_status,
     load_review_velocity, load_variant_skus,
     load_review_velocity_forecast, load_price_band_momentum, load_whitespace_scores,
-    load_filter_options,
+    load_filter_options, lookup_sku,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -1455,13 +1455,8 @@ def _sku_lookup_dialog():
 """, unsafe_allow_html=True)
     st.divider()
     if _do_lookup and _sku_q.strip():
-        # Search DB for this SKU/ASIN in products
         try:
-            from streamlit_app.db import load_products
-            _all = load_products()
-            _q_lower = _sku_q.strip().lower()
-            _hit = _all[_all.apply(lambda r: _q_lower in str(r.get("url","")).lower()
-                                   or _q_lower in str(r.get("title","")).lower(), axis=1)]
+            _hit = lookup_sku(_sku_q)
             if _hit.empty:
                 st.warning(f"No product found matching **{_sku_q}** in the database.")
             else:

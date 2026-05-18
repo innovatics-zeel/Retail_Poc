@@ -164,8 +164,21 @@ def _get_or_create_product(
     category_id: Optional[int],
 ) -> int:
     image = values.get("image")
+    url = values.get("url", "")
+    platform_item_id = values.get("asin") or values.get("platform_item_id")
+    if platform_item_id:
+        platform_item_id = str(platform_item_id).strip()
     obj = db.query(Product).filter_by(url=values["url"]).first()
+    if not platform_item_id:
+        asin_m = re.search(r"/dp/([A-Z0-9]{10})", url)
+        if asin_m:
+            platform_item_id = asin_m.group(1)
+        else:
+            item_m = re.search(r"/s/[^/]+/(\d+)", url)
+            if item_m:
+                platform_item_id = item_m.group(1)
     if obj:
+        obj.platform_item_id = platform_item_id or obj.platform_item_id
         obj.platform_id = values.get("platform_id") or obj.platform_id
         obj.brand_id = brand_id
         obj.category_id = category_id
@@ -180,17 +193,7 @@ def _get_or_create_product(
         obj.care = values.get("care_instructions")
         obj.scraped_at = datetime.now(timezone.utc)
         return obj.product_id
-
-    url = values.get("url", "")
-    platform_item_id = None
-    asin_m = re.search(r"/dp/([A-Z0-9]{10})", url)
-    if asin_m:
-        platform_item_id = asin_m.group(1)
-    else:
-        item_m = re.search(r"/s/[^/]+/(\d+)", url)
-        if item_m:
-            platform_item_id = item_m.group(1)
-
+ 
     obj = Product(
         platform_id=values.get("platform_id") or 1,
         brand_id=brand_id,

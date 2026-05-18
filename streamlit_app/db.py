@@ -266,7 +266,46 @@ def load_variant_skus(platform: str = None, category: str = None) -> pd.DataFram
     finally:
         db.close()
 
-
+def lookup_sku(query: str) -> pd.DataFrame:
+    """Look up a marketplace ID or internal SKU code, then fall back to URL/title text."""
+    q = (query or "").strip().lower()
+    if not q:
+        return pd.DataFrame()
+ 
+    variants = load_variant_skus()
+    if not variants.empty:
+        variant_exact = variants[
+            variants.apply(
+                lambda r: (
+                    str(r.get("sku_code", "")).strip().lower() == q
+                    or str(r.get("platform_item_id", "")).strip().lower() == q
+                ),
+                axis=1,
+            )
+        ]
+        if not variant_exact.empty:
+            return variant_exact.reset_index(drop=True)
+ 
+    products = load_products()
+    if products.empty:
+        return pd.DataFrame()
+ 
+    product_exact = products[
+        products["platform_item_id"].fillna("").astype(str).str.strip().str.lower() == q
+    ]
+    if not product_exact.empty:
+        return product_exact.reset_index(drop=True)
+ 
+    product_fallback = products[
+        products.apply(
+            lambda r: (
+                q in str(r.get("url", "")).lower()
+                or q in str(r.get("title", "")).lower()
+            ),
+            axis=1,
+        )
+    ]
+    return product_fallback.reset_index(drop=True)
 # ── KPI helpers ───────────────────────────────────────────────────────────────
 
 def get_kpis(df: pd.DataFrame) -> dict:
