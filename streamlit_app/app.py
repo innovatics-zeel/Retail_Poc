@@ -3162,7 +3162,7 @@ def _predictive_kpis(rows: list[dict]) -> dict:
         change = float(row.get("change") or 0)
         conf = _confidence_pct(row)
         if _stage_key(row.get("stage")) in {"accelerating", "declining"} and conf > 75 and abs(change) > 15:
-            urgent.append({**row, "confidence_pct": conf, "decision_tag": _decision_tag(row.get("stage"), change)})
+            urgent.append({**row, "confidence_pct": conf, "decision_tag": _decision_tag_full(row.get("stage"), change)})
 
     gains = [r for r in rows if float(r.get("change") or 0) > 0]
     risks = [r for r in rows if float(r.get("change") or 0) < 0]
@@ -3302,8 +3302,10 @@ def _review_velocity_html(rows: list[dict]) -> str:
         title = row.get("name") or "Review velocity"
         current = _num(row.get("current_reviews") or 0)
         conf_pct = _confidence_pct(row)
+        hist_vals = row.get("hist_vals") or []
+        future_vals = row.get("future_vals") or []
         html.append(
-            _sparkline_html(title, actual, projected) +
+            _sparkline_from_vals(title, actual, projected, hist_vals, future_vals) +
             f'<div class="tag-row" style="margin-top:-7px;margin-bottom:9px;">'
             f'<span class="tag info">{current} current reviews</span>'
             f'<span class="tag warn">{conf_pct}% confidence</span>'
@@ -3448,6 +3450,8 @@ def _trajectory_rows_html(
     category: str = "All",
     gender: str = "All",
     style: str = "All",
+    platform_map: dict | None = None,
+    velocity_lookup: dict | None = None,
 ) -> str:
     if not rows:
         return "<div class='empty-panel'>No backend pattern trajectory available yet. Run predictions after scrape history exists.</div>"
@@ -3500,10 +3504,17 @@ def _trajectory_rows_html(
         )
 
     html = []
+    vlookup = velocity_lookup or {}
     for idx, row in enumerate(rows[:6]):
         change = float(row.get("change") or 0)
-        fc4 = _forecast_value(change, 4)
-        fc8 = _forecast_value(change, 8)
+        row_cat = str(row.get("category") or "")
+        row_plat = str(row.get("platform") or "")
+        vel = vlookup.get((row_cat, row_plat), {})
+        hist_vals = vel.get("hist_vals") or []
+        future_vals = vel.get("future_vals") or []
+        proj_chg = vel.get("projected_change_pct")
+        fc4 = int(round(proj_chg * 28 / 30)) if proj_chg is not None else _forecast_value(change, 4)
+        fc8 = int(round(proj_chg * 56 / 30)) if proj_chg is not None else _forecast_value(change, 8)
         conf = _confidence_pct(row)
         stage = _stage_key(row.get("stage"))
         name = _label(row.get("name"), "Pattern")
@@ -3543,20 +3554,7 @@ def _trajectory_rows_html(
   <div class="pred-expand-grid">
     <div class="pred-chart">
       <div class="pred-chart-title">30d actual + 8w forecast</div>
-      <svg viewBox="0 0 400 130" preserveAspectRatio="none" style="width:100%;height:130px;display:block;">
-        <line x1="0" y1="32" x2="400" y2="32" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3" />
-        <line x1="0" y1="65" x2="400" y2="65" stroke="#cbd5e1" stroke-width="1" />
-        <line x1="0" y1="98" x2="400" y2="98" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3" />
-        <path d="M 200,42 L 250,32 L 300,28 L 350,34 L 400,42 L 400,82 L 350,76 L 300,68 L 250,58 L 200,74 Z" fill="rgba(8,165,214,.12)" />
-        <line x1="200" y1="0" x2="200" y2="130" stroke="#0f172a" stroke-width="1.5" stroke-dasharray="3,2" opacity=".55" />
-        <text x="200" y="12" font-family="JetBrains Mono, monospace" font-size="9" fill="#0f172a" text-anchor="middle" font-weight="700">NOW</text>
-        <polyline points="0,85 50,80 100,70 150,55 200,48" fill="none" stroke="#0080b3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-        <polyline points="200,48 250,42 300,38 350,46 400,52" fill="none" stroke="#08a5d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,4" />
-        <circle cx="200" cy="48" r="3" fill="#0080b3" stroke="#fff" stroke-width="1.5" />
-        <circle cx="300" cy="38" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
-        <circle cx="400" cy="52" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
-      </svg>
-      <div style="display:flex;justify-content:space-between;color:#94a3b8;font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:4px;"><span>-30d</span><span>-15d</span><span>now</span><span>+4w</span><span>+8w</span></div>
+      {_trajectory_svg(hist_vals, future_vals)}
     </div>
     <div class="pred-driver">
       <div class="pred-driver-title">Why this trajectory · evidence</div>
@@ -3796,7 +3794,7 @@ _AGREE_CLASS = {
 }
 
 
-def _winning_patterns_html(rows: list[dict]) -> str:
+def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None) -> str:
     """Winning Patterns hero panel matching S1 HTML archetype-row design."""
     n = len(rows)
     if not rows:
@@ -3828,20 +3826,26 @@ def _winning_patterns_html(rows: list[dict]) -> str:
         name = _label(row.get("name"), "Pattern")
         action = row.get("action") or "Monitor"
         conf_pct = _confidence_pct(row)
-        decision = _decision_tag(stage, change)
+        # Real per-platform velocity from platform_map
+        pmap = platform_map or {}
+        pkey = (str(row.get("attr_key") or ""), str(row.get("name") or ""))
+        plat_data = pmap.get(pkey, {})
+        amz_chg = plat_data.get("amz")
+        nor_chg = plat_data.get("nor")
+        if amz_chg is None and nor_chg is None:
+            amz_chg = int(round(change))
+            nor_chg = int(round(change))
+        elif amz_chg is None:
+            amz_chg = int(round(change))
+        elif nor_chg is None:
+            nor_chg = int(round(change))
+        decision = _decision_tag_full(stage, change, amz_chg, nor_chg)
         dtag_cls, dtag_lbl = _DECISION_TAG_DISPLAY.get(decision, ("watch", decision))
-
-        # Simulate Amazon/Nordstrom split (proxy from change ± small offset)
-        amz_chg = int(round(change * 1.05))
-        nor_chg = int(round(change * 0.88))
         amz_cls = "vel-up" if amz_chg >= 0 else "vel-down"
         nor_cls = "vel-up" if nor_chg >= 0 else "vel-down"
 
-        # Cross-platform agreement
-        diff = abs(amz_chg - nor_chg)
-        agree_level = 3 if diff < 5 else 2 if diff < 15 else 1
-        agree_cls = _AGREE_CLASS.get(agree_level, "divergent")
-        agree_lbl = "Strong" if agree_level == 3 else "Mixed" if agree_level == 2 else "Divergent"
+        # Real cross-platform agreement
+        agree_lbl, agree_cls, _agree_bars = _real_agreement(amz_chg, nor_chg)
 
         weeks_obs = int(row.get("weeks_observed") or 0)
         attrs_txt = f"{_safe(action)} · {weeks_obs}w observed"
@@ -4483,6 +4487,175 @@ def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None) -
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DYNAMIC COMPUTATION HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _vals_to_svg_points(vals: list[float], x_start: float, x_end: float,
+                         y_top: float = 10.0, y_bot: float = 120.0) -> str:
+    """Convert a list of values into SVG polyline point string."""
+    if not vals:
+        return ""
+    clean = [float(v) for v in vals]
+    n = len(clean)
+    vmin, vmax = min(clean), max(clean)
+    vrange = max(vmax - vmin, 1e-9)
+    pts = []
+    for i, v in enumerate(clean):
+        x = x_start + (x_end - x_start) * i / max(n - 1, 1)
+        y = y_bot - (y_bot - y_top) * (v - vmin) / vrange
+        pts.append(f"{x:.0f},{y:.0f}")
+    return " ".join(pts)
+
+
+def _build_platform_map(scores_amz: pd.DataFrame, scores_nor: pd.DataFrame) -> dict:
+    """Build {(attr_key, attr_value) -> {"amz": int|None, "nor": int|None}} from per-platform trend_scores."""
+    result: dict[tuple[str, str], dict[str, int | None]] = {}
+    for scores, plat_key in [(scores_amz, "amz"), (scores_nor, "nor")]:
+        if scores is None or scores.empty:
+            continue
+        for _, row in scores.iterrows():
+            key = (str(row.get("attr_key") or ""), str(row.get("attr_value") or ""))
+            if key not in result:
+                result[key] = {"amz": None, "nor": None}
+            chg = row.get("review_growth_pct")
+            if pd.notna(chg):
+                result[key][plat_key] = int(round(float(chg)))
+    return result
+
+
+def _real_agreement(amz: int | None, nor: int | None) -> tuple[str, str, int]:
+    """Compute cross-platform agreement from real per-platform velocity.
+    Returns (label, css_class, bar_count 1-3)."""
+    if amz is None and nor is None:
+        return "No data", "divergent", 1
+    if amz is None or nor is None:
+        return "Single channel", "mixed", 2
+    if (amz >= 0) == (nor >= 0):
+        diff = abs(amz - nor)
+        if diff < 10:
+            return "Strong", "strong", 3
+        return "Mixed", "mixed", 2
+    return "Divergent", "divergent", 1
+
+
+def _compute_driver_pcts(gt_delta: int | None) -> tuple[int, int, int]:
+    """Return (proxy_pct, pull_pct, context_pct).
+    Context is always 0 (NOAA not live). Pull allocated when GT data is available."""
+    if gt_delta is not None:
+        pull_raw = min(35, max(10, abs(gt_delta) // 2))
+        return 100 - pull_raw, pull_raw, 0
+    return 100, 0, 0
+
+
+def _decision_tag_full(stage: str, change: float,
+                        amz_change: int | None = None,
+                        nor_change: int | None = None,
+                        price_band_shifted: bool = False) -> str:
+    """Full decision tag including Reprice and Reposition from real per-platform data."""
+    stage = _stage_key(stage)
+    if amz_change is not None and nor_change is not None:
+        if (amz_change > 5 and nor_change < -5) or (amz_change < -5 and nor_change > 5):
+            return "Reposition"
+    if price_band_shifted and stage in {"accelerating", "plateau"}:
+        return "Reprice"
+    if stage == "accelerating":
+        return "Replenish" if change >= 0 else "Watch"
+    if stage == "declining":
+        return "Retire" if change < 0 else "Watch"
+    if stage == "emerging":
+        return "Watch"
+    return "Watch"
+
+
+def _build_velocity_lookup(velocity_rows: list[dict]) -> dict[tuple[str, str], dict]:
+    """Index velocity forecast rows by (category, platform) for O(1) lookup."""
+    return {
+        (str(r.get("category") or ""), str(r.get("platform") or "")): r
+        for r in (velocity_rows or [])
+    }
+
+
+def _trajectory_svg(hist_vals: list[float], future_vals: list[float]) -> str:
+    """Generate a real 400×130 SVG trajectory chart from actual hist and forecast data."""
+    hist_pts = _vals_to_svg_points(hist_vals or [], 0, 200, y_top=12, y_bot=118) or "0,65 200,65"
+    fcast_pts = _vals_to_svg_points(future_vals or [], 200, 400, y_top=12, y_bot=118) or "200,65 400,65"
+
+    fc_clean = [float(v) for v in (future_vals or [])]
+    n_fc = len(fc_clean)
+    upper_b, lower_b = [], []
+    if n_fc > 0:
+        vmin_fc, vmax_fc = min(fc_clean), max(fc_clean)
+        vrange_fc = max(vmax_fc - vmin_fc, 1e-9)
+        for i, v in enumerate(fc_clean):
+            x = 200 + 200 * i / max(n_fc - 1, 1)
+            y = 118 - (118 - 12) * (v - vmin_fc) / vrange_fc
+            upper_b.append(f"{x:.0f},{max(12, y - 8):.0f}")
+            lower_b.append(f"{x:.0f},{min(118, y + 8):.0f}")
+        band_pts = " ".join(upper_b) + " " + " ".join(reversed(lower_b))
+    else:
+        band_pts = "200,57 400,57 400,73 200,73"
+
+    junction_y = hist_pts.rsplit(" ", 1)[-1].split(",")[1] if " " in hist_pts else "65"
+
+    return f"""<svg viewBox="0 0 400 130" preserveAspectRatio="none" style="width:100%;height:130px;display:block;">
+  <line x1="0" y1="32" x2="400" y2="32" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3"/>
+  <line x1="0" y1="65" x2="400" y2="65" stroke="#cbd5e1" stroke-width="1"/>
+  <line x1="0" y1="98" x2="400" y2="98" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3"/>
+  <polygon points="{band_pts}" fill="rgba(8,165,214,.12)"/>
+  <line x1="200" y1="0" x2="200" y2="130" stroke="#0f172a" stroke-width="1.5" stroke-dasharray="3,2" opacity=".55"/>
+  <text x="200" y="12" font-family="JetBrains Mono,monospace" font-size="9" fill="#0f172a" text-anchor="middle" font-weight="700">NOW</text>
+  <polyline points="{hist_pts}" fill="none" stroke="#0080b3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="{fcast_pts}" fill="none" stroke="#08a5d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,4"/>
+  <circle cx="200" cy="{junction_y}" r="3" fill="#0080b3" stroke="#fff" stroke-width="1.5"/>
+</svg>
+<div style="display:flex;justify-content:space-between;color:#94a3b8;font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:4px;">
+  <span>-30d</span><span>-15d</span><span>now</span><span>+4w</span><span>+8w</span>
+</div>"""
+
+
+def _sparkline_from_vals(title: str, actual: int, projected: int,
+                          hist_vals: list[float], future_vals: list[float]) -> str:
+    """Build sparkline using real historical and forecast data points."""
+    projected_color = ACCENT if projected >= 0 else DANGER
+    band_color = "#dff2fb" if projected >= 0 else "#ffe5e5"
+
+    hist_pts = _vals_to_svg_points(hist_vals or [], 10, 260, y_top=8, y_bot=82) or "10,45 260,45"
+    fcast_pts = _vals_to_svg_points((future_vals or [])[:30], 260, 486, y_top=8, y_bot=82) or "260,45 486,45"
+
+    fc_clean = [float(v) for v in (future_vals or [])[:30]]
+    n_fc = len(fc_clean)
+    upper_b, lower_b = [], []
+    if n_fc > 0:
+        vmin_fc, vmax_fc = min(fc_clean), max(fc_clean)
+        vrange_fc = max(vmax_fc - vmin_fc, 1e-9)
+        for i, v in enumerate(fc_clean):
+            x = 260 + 226 * i / max(n_fc - 1, 1)
+            y = 82 - (82 - 8) * (v - vmin_fc) / vrange_fc
+            upper_b.append(f"{x:.0f},{max(8, y - 6):.0f}")
+            lower_b.append(f"{x:.0f},{min(82, y + 6):.0f}")
+        band_pts = " ".join(upper_b) + " " + " ".join(reversed(lower_b))
+    else:
+        band_pts = "260,39 486,39 486,51 260,51"
+
+    junction_y = hist_pts.rsplit(" ", 1)[-1].split(",")[1] if " " in hist_pts else "45"
+
+    return f"""
+<div class="mini-forecast">
+  <div class="mini-top"><span>{_safe(title)}</span><span>Actual <span style="color:{SUCCESS if actual >= 0 else DANGER};">{actual:+d}%</span> · projected <span style="color:{projected_color};">{projected:+d}%</span> next 30d</span></div>
+  <div class="sparkline">
+    <svg viewBox="0 0 500 90" preserveAspectRatio="none">
+      <polygon points="{band_pts}" fill="{band_color}" opacity=".75"></polygon>
+      <polyline points="{hist_pts}" fill="none" stroke="{PRIMARY}" stroke-width="3"></polyline>
+      <polyline points="{fcast_pts}" fill="none" stroke="{projected_color}" stroke-width="3" stroke-dasharray="5 5"></polyline>
+      <circle cx="260" cy="{junction_y}" r="4" fill="{PRIMARY}"></circle>
+    </svg>
+    <span class="now"></span>
+  </div>
+  <div class="spark-axis"><span>-30d</span><span>-20d</span><span>-10d</span><strong>Now</strong><span>+10d</span><span>+20d</span><span>+30d</span></div>
+</div>"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════════════
 if main_view == "analytics":
@@ -4495,9 +4668,18 @@ if main_view == "analytics":
         platform=None if platform_filter == "All" else platform_filter,
     )
     attr_rows_t1 = _forecast_source(df, trend_scores_df, limit=8)
+    scores_amz_t1 = load_trend_scores(
+        category=None if category_filter == "All" else category_filter,
+        platform="amazon",
+    )
+    scores_nor_t1 = load_trend_scores(
+        category=None if category_filter == "All" else category_filter,
+        platform="nordstrom",
+    )
+    platform_map_t1 = _build_platform_map(scores_amz_t1, scores_nor_t1)
 
     kpi_html = _analytics_kpi_strip_html(df, sku_df, trend_scores_df)
-    patterns_html = _winning_patterns_html(attr_rows_t1)
+    patterns_html = _winning_patterns_html(attr_rows_t1, platform_map=platform_map_t1)
 
     show_panels = st.session_state.get("show_support_panels", True)
     support_html = _supporting_grid_html(df, sku_df) if show_panels else ""
@@ -4551,6 +4733,20 @@ if main_view == "predictive":
             platform=None if platform_filter == "All" else platform_filter,
         )
         attr_rows = _forecast_source(df, trend_scores_df, limit=7)
+        velocity_rows_t2 = load_review_velocity_forecast(
+            platform=None if platform_filter == "All" else platform_filter,
+            category=None if category_filter == "All" else category_filter,
+        )
+        velocity_lookup_t2 = _build_velocity_lookup(velocity_rows_t2)
+        scores_amz_t2 = load_trend_scores(
+            category=None if category_filter == "All" else category_filter,
+            platform="amazon",
+        )
+        scores_nor_t2 = load_trend_scores(
+            category=None if category_filter == "All" else category_filter,
+            platform="nordstrom",
+        )
+        platform_map_t2 = _build_platform_map(scores_amz_t2, scores_nor_t2)
         gt_queries = _google_trends_queries(attr_rows, category_filter, gender_filter, style_filter)
         gt_geo = os.getenv("SERPAPI_GOOGLE_TRENDS_GEO", "US")
         gt_window = os.getenv("SERPAPI_GOOGLE_TRENDS_WINDOW", "today 3-m")
@@ -4610,7 +4806,7 @@ if main_view == "predictive":
       <span style="text-align:center;">Forecast · +8w</span>
       <span></span>
     </div>
-    {_trajectory_rows_html(attr_rows, google_trends_summary, google_trends, category_filter, gender_filter, style_filter)}
+    {_trajectory_rows_html(attr_rows, google_trends_summary, google_trends, category_filter, gender_filter, style_filter, platform_map=platform_map_t2, velocity_lookup=velocity_lookup_t2)}
   </div>
 
   <div class="pred-panel">
@@ -4690,10 +4886,11 @@ def _s3_mode_bar_html(current_mode: str, rec_count: int, fresh_label: str) -> st
 </div>"""
 
 
-def _s3_market_frame_html(ctx_t3: dict, visible_platform: str, window: str) -> str:
+def _s3_market_frame_html(ctx_t3: dict, visible_platform: str, window: str, gt_delta: int | None = None) -> str:
     top_attr = _label(ctx_t3.get("rising_attr"), "Marketplace signals")
     gain = ctx_t3.get("rising_gain")
     gain_txt = f"{gain:+d}% vs prior window" if gain is not None else "selected window"
+    proxy_pct, pull_pct, ctx_pct = _compute_driver_pcts(gt_delta)
     return f"""
 <div class="market-frame">
   <div class="market-frame-content">
@@ -4705,14 +4902,14 @@ def _s3_market_frame_html(ctx_t3: dict, visible_platform: str, window: str) -> s
     </div>
   </div>
   <div class="market-drivers">
-    <div class="market-driver proxy"><span class="market-driver-pct">58%</span><span class="market-driver-label">Proxy</span></div>
-    <div class="market-driver context"><span class="market-driver-pct">27%</span><span class="market-driver-label">Context</span></div>
-    <div class="market-driver pull"><span class="market-driver-pct">15%</span><span class="market-driver-label">Pull</span></div>
+    <div class="market-driver proxy"><span class="market-driver-pct">{proxy_pct}%</span><span class="market-driver-label">Proxy</span></div>
+    <div class="market-driver context"><span class="market-driver-pct">{ctx_pct}%</span><span class="market-driver-label">Context</span></div>
+    <div class="market-driver pull"><span class="market-driver-pct">{pull_pct}%</span><span class="market-driver-label">Pull</span></div>
   </div>
 </div>"""
 
 
-def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False) -> str:
+def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, gt_delta: int | None = None) -> str:
     rec_id = int(rec["rec_id"])
     status = str(rec.get("status") or "pending").strip().lower()
     pat_type = (rec.get("pattern_type") or "watch").strip().lower()
@@ -4760,9 +4957,7 @@ def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False) -
     except Exception:
         generated_label = "recently"
 
-    proxy_pct = min(65, max(42, conf_pct - 28))
-    ctx_pct = 27
-    pull_pct = max(8, 100 - proxy_pct - ctx_pct)
+    proxy_pct, pull_pct, ctx_pct = _compute_driver_pcts(gt_delta)
     status_badge = ""
     if status == "accepted":
         status_badge = '<span style="font-size:10.5px;color:var(--success);font-family:var(--font-mono);font-weight:600;">Acknowledged</span>'
@@ -4883,8 +5078,9 @@ if main_view == "askrec":
 
         if s3_mode == "recommendations":
             ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
+            _s3_gt_delta = ctx_t3.get("rising_gain")
             card_html = "".join(
-                _s3_recommendation_card_html(rec, rank, expanded=(rank == 1))
+                _s3_recommendation_card_html(rec, rank, expanded=(rank == 1), gt_delta=_s3_gt_delta)
                 for rank, rec in enumerate(recs_from_db[:10], 1)
             )
             if not card_html:
@@ -4896,7 +5092,7 @@ if main_view == "askrec":
 
             st.html(
                 '<div class="canvas">'
-                + _s3_market_frame_html(ctx_t3, _visible_platform, window_filter)
+                + _s3_market_frame_html(ctx_t3, _visible_platform, window_filter, gt_delta=_s3_gt_delta)
                 + f'<div class="recommendations-list">{card_html}</div></div>'
             )
 
