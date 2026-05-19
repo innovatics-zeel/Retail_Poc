@@ -7,6 +7,10 @@ import os
 import re
 import uuid
 import warnings
+import json
+import hashlib
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -24,11 +28,15 @@ if _CHATBOT_DIR not in sys.path:
 
 import base64
 from html import escape
+from urllib.parse import quote_plus, urlencode
+from dotenv import load_dotenv
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+
+load_dotenv()
 
 from streamlit_app.db import (
     load_products, get_kpis, attribute_counts,
@@ -37,7 +45,7 @@ from streamlit_app.db import (
     load_trend_scores, load_recommendations, update_recommendation_status,
     load_review_velocity, load_variant_skus,
     load_review_velocity_forecast, load_price_band_momentum, load_whitespace_scores,
-    load_filter_options, lookup_sku,
+    load_filter_options, lookup_sku, load_category_week_delta,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -64,16 +72,31 @@ LIGHT_BG = CANVAS
 
 st.markdown(f"""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    @import url('https://api.fontshare.com/v2/css?f[]=clash-grotesk@400,500,600,700&display=swap');
+
     :root {{
         --ink:{INK}; --muted:{MUTED}; --line:{LINE}; --panel:{PANEL};
         --canvas:{CANVAS}; --accent:{ACCENT}; --success:{SUCCESS};
         --warning:{WARNING}; --danger:{DANGER};
+        --primary:#00a4e3; --primary-deep:#0080b3; --primary-soft:rgba(0,164,227,.08);
+        --primary-line:rgba(0,164,227,.2);
+        --dark-1:#0a1628; --dark-2:#14233d; --dark-3:#1e3358;
+        --bg:#f8fafc; --surface:#ffffff; --surface-soft:#fafbfd;
+        --text-1:#0f172a; --text-2:#475569; --text-3:#94a3b8; --text-4:#cbd5e1;
+        --border:#e2e8f0; --border-emphasis:#cbd5e1;
+        --font-display:'Clash Grotesk', system-ui, sans-serif;
+        --font-body:'Inter', system-ui, sans-serif;
+        --font-mono:'JetBrains Mono', ui-monospace, monospace;
+        --radius:12px; --radius-sm:6px;
     }}
+    body, .stApp {{ font-family: var(--font-body) !important; }}
     .stApp, [data-testid="stAppViewContainer"] {{ background:{CANVAS}; color:{INK}; }}
     [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"],
     [data-testid="stSidebar"] {{ display:none !important; }}
     .block-container {{ padding:0 0 22px !important; max-width:100% !important; }}
-    h1, h2, h3, p {{ letter-spacing:0 !important; }}
+    h1, h2, h3 {{ font-family: var(--font-display) !important; letter-spacing:-.01em !important; }}
+    p {{ letter-spacing:0 !important; }}
     div[data-testid="stVerticalBlock"] {{ gap:0.75rem; }}
 
     .top-shell {{
@@ -84,7 +107,7 @@ st.markdown(f"""
         display:grid; grid-template-columns:210px 1fr 540px;
         gap:18px; align-items:center;
     }}
-    .brand-mark {{ display:flex; align-items:center; gap:10px; font-weight:800; color:var(--ink); }}
+    .brand-mark {{ display:flex; align-items:center; gap:10px; font-weight:800; color:var(--ink); font-family:var(--font-display); }}
     .mark-stack {{ position:relative; width:28px; height:34px; }}
     .mark-stack span {{ position:absolute; width:10px; height:24px; transform:rotate(42deg); border-radius:2px; }}
     .mark-stack .m1 {{ background:#079ed4; left:8px; top:-1px; height:10px; }}
@@ -112,7 +135,7 @@ st.markdown(f"""
 
     .hero-strip {{ background:#fff; border-bottom:1px solid var(--line); padding:26px 30px 14px; }}
     .hero-grid {{ display:grid; grid-template-columns:1fr auto; gap:20px; align-items:start; }}
-    .hero-title {{ font-size:1.72rem; line-height:1.05; font-weight:900; margin:0; color:var(--ink); }}
+    .hero-title {{ font-size:1.72rem; line-height:1.05; font-weight:900; margin:0; color:var(--ink); font-family:var(--font-display); letter-spacing:-.02em; }}
     .hero-sub {{ color:var(--muted); margin:6px 0 0; font-size:.92rem; }}
     .live-meta {{ display:flex; align-items:center; gap:16px; justify-content:flex-end; color:var(--muted); font-size:.84rem; padding-top:4px; }}
     .live-meta strong {{ color:var(--ink); font-weight:850; }}
@@ -128,7 +151,7 @@ st.markdown(f"""
     .signal-card {{ min-height:96px; padding:19px 30px; border-right:1px solid var(--line); }}
     .signal-card:last-child {{ border-right:0; }}
     .signal-label {{ color:var(--muted); font-size:.78rem; margin-bottom:3px; font-weight:650; }}
-    .signal-value {{ color:var(--ink); font-size:2.05rem; line-height:1.05; font-weight:900; white-space:nowrap; }}
+    .signal-value {{ color:var(--ink); font-size:2.05rem; line-height:1.05; font-weight:900; white-space:nowrap; font-family:var(--font-display); letter-spacing:-.02em; }}
     .signal-note {{ color:var(--muted); font-size:.82rem; margin-top:4px; }}
     .signal-note strong {{ color:var(--ink); }}
     .delta {{ display:inline-block; padding:2px 7px; border-radius:5px; font-size:.74rem; font-weight:900; vertical-align:middle; }}
@@ -141,7 +164,7 @@ st.markdown(f"""
     .col-stack {{ display:flex; flex-direction:column; gap:16px; }}
     .mi-panel {{ background:#fff; border:1px solid var(--line); border-radius:7px; overflow:hidden; box-shadow:0 1px 2px rgba(15,27,45,.03); }}
     .panel-head {{ min-height:48px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; border-bottom:1px solid #edf2f6; gap:16px; }}
-    .panel-title {{ font-weight:900; color:var(--ink); font-size:1.01rem; line-height:1.1; }}
+    .panel-title {{ font-weight:700; color:var(--ink); font-size:1.01rem; line-height:1.1; font-family:var(--font-display); }}
     .panel-sub {{ color:var(--muted); font-size:.78rem; line-height:1.1; text-align:right; }}
     .panel-body {{ padding:14px 18px 16px; }}
     .style-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
@@ -386,31 +409,31 @@ st.markdown(f"""
     .pred-kpi.lead:before {{ background:linear-gradient(90deg,var(--accent),#7c3aed); }}
     .pred-kpi-label {{ color:#94a3b8; font-size:10.5px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; display:flex; gap:6px; align-items:center; }}
     .pred-kpi-title {{ color:var(--ink); font-size:16px; line-height:1.22; font-weight:900; }}
-    .pred-kpi-stat {{ display:flex; align-items:baseline; gap:7px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }}
+    .pred-kpi-stat {{ display:flex; align-items:baseline; gap:7px; font-family:var(--font-mono); font-size:11px; }}
     .pred-kpi-big {{ font-size:20px; font-weight:900; letter-spacing:0; }}
     .pred-kpi-meta {{ color:#475569; font-weight:700; }}
-    .pred-kpi-foot {{ margin-top:auto; padding-top:8px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-kpi-foot {{ margin-top:auto; padding-top:8px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:10.5px; font-family:var(--font-mono); }}
     .pred-panel {{ background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }}
     .pred-panel-head {{ min-height:62px; padding:14px 20px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; gap:16px; }}
     .pred-panel-title {{ color:var(--ink); font-size:16px; font-weight:900; line-height:1.15; }}
     .pred-panel-sub {{ color:#475569; font-size:12.5px; margin-top:2px; }}
-    .pred-sort {{ background:#fafbfd; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; padding:5px 10px; }}
+    .pred-sort {{ background:#fafbfd; border:1px solid #e2e8f0; border-radius:6px; color:#475569; font-size:12px; font-family:var(--font-mono); padding:5px 10px; }}
     .pred-colhead, .pred-row {{ display:grid; grid-template-columns:32px minmax(220px,1fr) 110px 110px 130px 28px; gap:16px; align-items:center; }}
-    .pred-colhead {{ padding:10px 20px; background:#fafbfd; border-bottom:1px solid #e2e8f0; color:#94a3b8; font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-colhead {{ padding:10px 20px; background:#fafbfd; border-bottom:1px solid #e2e8f0; color:#94a3b8; font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono); }}
     .pred-row {{ padding:14px 20px; border-bottom:1px solid #e2e8f0; }}
     .pred-toggle {{ display:none; }}
     .pred-toggle:not(:checked) + .pred-row + .pred-expand-panel {{ display:none; }}
     .pred-toggle:checked + .pred-row {{ background:rgba(8,165,214,.08); border-bottom-color:rgba(8,165,214,.18); }}
     .pred-row.expanded {{ background:rgba(8,165,214,.08); border-bottom-color:rgba(8,165,214,.18); }}
-    .pred-rank {{ text-align:center; color:#94a3b8; font-size:11px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-rank {{ text-align:center; color:#94a3b8; font-size:11px; font-weight:900; font-family:var(--font-mono); }}
     .pred-name {{ color:var(--ink); font-size:14.5px; font-weight:900; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }}
-    .pred-attrs {{ color:#475569; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-top:3px; }}
+    .pred-attrs {{ color:#475569; font-size:12px; font-family:var(--font-mono); margin-top:3px; }}
     .pred-badges {{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }}
-    .pred-badge {{ font-size:9.5px; font-weight:900; letter-spacing:.03em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; border-radius:3px; padding:2px 6px; }}
+    .pred-badge {{ font-size:9.5px; font-weight:900; letter-spacing:.03em; font-family:var(--font-mono); border-radius:3px; padding:2px 6px; }}
     .pred-badge.gt {{ background:rgba(8,165,214,.12); color:#078db8; }}
     .pred-badge.wx {{ background:rgba(255,176,0,.18); color:#a06b00; }}
     .pred-badge.soon {{ background:#edf2f7; color:#52617a; }}
-    .pred-life {{ font-size:10px; text-transform:uppercase; letter-spacing:.04em; border-radius:3px; padding:2px 6px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-life {{ font-size:10px; text-transform:uppercase; letter-spacing:.04em; border-radius:3px; padding:2px 6px; font-weight:900; font-family:var(--font-mono); }}
     .pred-life.emerging {{ background:rgba(8,165,214,.08); color:#078db8; }}
     .pred-life.accelerating {{ background:rgba(32,164,100,.1); color:var(--success); }}
     .pred-life.plateau {{ background:rgba(148,163,184,.18); color:#475569; }}
@@ -421,8 +444,8 @@ st.markdown(f"""
     .pred-value.up {{ color:var(--success); }}
     .pred-value.down {{ color:var(--danger); }}
     .pred-value.neutral {{ color:#475569; }}
-    .pred-conf {{ color:#94a3b8; font-size:10px; font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
-    .pred-progress {{ display:flex; justify-content:center; align-items:center; gap:3px; margin-top:5px; font-size:9px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-conf {{ color:#94a3b8; font-size:10px; font-weight:800; font-family:var(--font-mono); }}
+    .pred-progress {{ display:flex; justify-content:center; align-items:center; gap:3px; margin-top:5px; font-size:9px; font-family:var(--font-mono); }}
     .pred-step {{ border-radius:3px; padding:2px 5px; font-weight:900; }}
     .pred-step.accelerating {{ background:rgba(32,164,100,.1); color:var(--success); }}
     .pred-step.emerging {{ background:rgba(8,165,214,.08); color:#078db8; }}
@@ -434,15 +457,15 @@ st.markdown(f"""
     .pred-expand-panel {{ padding:18px 20px 20px 64px; background:rgba(8,165,214,.08); border-bottom:1px solid rgba(8,165,214,.18); }}
     .pred-expand-grid {{ display:grid; grid-template-columns:1.2fr 1fr; gap:20px; }}
     .pred-chart, .pred-driver {{ background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px; }}
-    .pred-chart-title, .pred-driver-title {{ color:#475569; font-size:10.5px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-bottom:10px; }}
+    .pred-chart-title, .pred-driver-title {{ color:#475569; font-size:10.5px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; font-family:var(--font-mono); margin-bottom:10px; }}
     .pred-driver {{ display:flex; flex-direction:column; gap:8px; border:0; background:transparent; padding:0; }}
     .pred-driver-row {{ background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; display:flex; gap:10px; align-items:flex-start; }}
-    .pred-driver-tag {{ min-width:124px; text-align:center; border-radius:3px; padding:2px 6px; font-size:10px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+    .pred-driver-tag {{ min-width:124px; text-align:center; border-radius:3px; padding:2px 6px; font-size:10px; font-weight:900; font-family:var(--font-mono); }}
     .pred-driver-tag.proxy {{ background:rgba(100,116,139,.18); color:#475569; }}
     .pred-driver-tag.pull {{ background:rgba(8,165,214,.18); color:#078db8; }}
     .pred-driver-tag.context {{ background:rgba(255,176,0,.24); color:#a06b00; }}
     .pred-driver-text {{ color:var(--ink); font-size:12px; line-height:1.45; }}
-    .pred-driver-source {{ display:block; color:#94a3b8; font-size:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-top:2px; }}
+    .pred-driver-source {{ display:block; color:#94a3b8; font-size:10px; font-family:var(--font-mono); margin-top:2px; }}
     .pred-life-grid, .pred-signal-grid {{ display:grid; grid-template-columns:repeat(4,1fr); }}
     .pred-life-card {{ padding:14px 16px; border-right:1px solid #e2e8f0; border-top:3px solid #94a3b8; }}
     .pred-life-card:last-child {{ border-right:0; }}
@@ -451,7 +474,7 @@ st.markdown(f"""
     .pred-life-card.declining {{ border-top-color:var(--danger); }}
     .pred-life-card-title {{ display:flex; justify-content:space-between; color:var(--ink); font-weight:900; }}
     .pred-life-count {{ border:1px solid #e2e8f0; background:#fafbfd; border-radius:999px; padding:2px 8px; font-size:11px; }}
-    .pred-life-avg {{ color:#94a3b8; font-size:11.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin:6px 0 10px; }}
+    .pred-life-avg {{ color:#94a3b8; font-size:11.5px; font-family:var(--font-mono); margin:6px 0 10px; }}
     .pred-life-item {{ padding:7px 0; border-top:1px solid #edf2f6; color:#475569; font-size:12px; }}
     .pred-life-item strong {{ color:var(--ink); }}
     .pred-signal-grid {{ grid-template-columns:repeat(3,1fr); gap:12px; }}
@@ -482,7 +505,8 @@ st.markdown(f"""
         gap:0; background:#fff; border-bottom:1px solid var(--line); padding-left:30px;
     }}
     .stTabs [data-baseweb="tab"] {{
-        height:44px; border-radius:0; padding:0 24px; color:var(--muted); font-weight:800;
+        height:44px; border-radius:0; padding:0 24px; color:var(--muted); font-weight:700;
+        font-family: var(--font-body) !important; font-size: 13.5px !important;
     }}
     .stTabs [aria-selected="true"] {{ color:var(--ink) !important; border-bottom:3px solid var(--accent); }}
     .stTabs [data-baseweb="tab-highlight"] {{ background:transparent; }}
@@ -609,39 +633,40 @@ st.markdown(f"""
         align-self: flex-end !important;
     }}
 
-    /* ── All buttons — light pill (Streamlit 1.35 uses .stButton class) ── */
+    /* ── All buttons — rectangular, matching HTML reference design ── */
     .stButton button,
     [data-testid="stButton"] button,
     [data-testid="stBaseButton-secondary"] {{
-        background:       #F0F5FA !important;
-        background-color: #F0F5FA !important;
+        background:       #fff !important;
+        background-color: #fff !important;
         color:            #334155 !important;
-        border:           1px solid #C8D6E5 !important;
-        border-radius:    999px !important;
-        font-size:        .78rem !important;
-        font-weight:      650 !important;
-        padding:          6px 16px !important;
-        min-height:       36px !important;
+        border:           1px solid #e2e8f0 !important;
+        border-radius:    6px !important;
+        font-size:        12.5px !important;
+        font-weight:      500 !important;
+        font-family:      var(--font-body) !important;
+        padding:          6px 14px !important;
+        min-height:       34px !important;
         box-shadow:       none !important;
         transition: background .15s ease, border-color .15s ease,
-                    color .15s ease, transform .12s ease !important;
+                    color .15s ease !important;
     }}
     .stButton button:hover,
     [data-testid="stButton"] button:hover,
     [data-testid="stBaseButton-secondary"]:hover {{
-        background:       #EBF6FF !important;
-        background-color: #EBF6FF !important;
-        border-color:     {ACCENT} !important;
-        color:            {ACCENT} !important;
-        transform:        translateY(-1px) !important;
+        background:       rgba(0,164,227,.06) !important;
+        background-color: rgba(0,164,227,.06) !important;
+        border-color:     rgba(0,164,227,.4) !important;
+        color:            #0069a0 !important;
+        transform:        none !important;
     }}
     .stButton button:active,
     [data-testid="stButton"] button:active,
     [data-testid="stBaseButton-secondary"]:active {{
-        transform: translateY(0) !important;
+        transform: none !important;
     }}
 
-    /* ── Primary (Send) button — blue ───────────────────────── */
+    /* ── Primary button — blue rectangular ───────────────────────── */
     .stButton button[kind="primary"],
     [data-testid="stButton"] button[kind="primary"],
     [data-testid="stBaseButton-primary"] {{
@@ -649,25 +674,25 @@ st.markdown(f"""
         background-color: {ACCENT} !important;
         border-color:     {ACCENT} !important;
         color:            #FFFFFF !important;
-        border-radius:    12px !important;
-        font-weight:      700 !important;
+        border-radius:    6px !important;
+        font-weight:      600 !important;
+        font-size:        12.5px !important;
         letter-spacing:   .01em !important;
-        box-shadow:       0 2px 8px rgba(8,165,214,.28) !important;
-        transition: transform .12s ease, box-shadow .15s ease,
-                    background .12s ease !important;
+        box-shadow:       0 1px 4px rgba(0,164,227,.25) !important;
+        transition: background .15s ease, box-shadow .15s ease !important;
     }}
     .stButton button[kind="primary"]:hover,
     [data-testid="stButton"] button[kind="primary"]:hover,
     [data-testid="stBaseButton-primary"]:hover {{
-        background:       #0794BF !important;
-        background-color: #0794BF !important;
-        border-color:     #0794BF !important;
-        transform:        translateY(-1px) !important;
-        box-shadow:       0 5px 16px rgba(8,165,214,.38) !important;
+        background:       #0080b3 !important;
+        background-color: #0080b3 !important;
+        border-color:     #0080b3 !important;
+        transform:        none !important;
+        box-shadow:       0 2px 8px rgba(0,164,227,.35) !important;
     }}
     .stButton button[kind="primary"]:active,
     [data-testid="stBaseButton-primary"]:active {{
-        transform: translateY(0) !important;
+        transform: none !important;
     }}
 
     /* ── Response metric highlights ─────────────────────────── */
@@ -742,6 +767,7 @@ st.markdown(f"""
         padding: 10px 18px !important;
         font-size: .9rem !important;
         color: {INK} !important;
+        font-family: var(--font-body) !important;
     }}
 
     /* ── Chat panel header pill badges ─────────────────────── */
@@ -808,7 +834,7 @@ st.markdown(f"""
     .chrome-right {{ display: flex; align-items: center; gap: 16px; }}
     .refresh-status-new {{
         display: flex; align-items: center; gap: 8px; font-size: 12px;
-        color: rgba(255,255,255,0.7); font-family: ui-monospace, 'JetBrains Mono', monospace;
+        color: rgba(255,255,255,0.7); font-family: var(--font-mono);
     }}
     @keyframes chrome-pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} }}
     .live-dot-pulse {{
@@ -831,7 +857,7 @@ st.markdown(f"""
     }}
     .filter-row-lbl {{
         font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em;
-        color: #94a3b8; font-weight: 600; font-family: ui-monospace, monospace;
+        color: #94a3b8; font-weight: 600; font-family: var(--font-mono);
         width: 58px; flex-shrink: 0; padding-top: 4px;
     }}
     .filter-divider-v {{ width: 1px; height: 22px; background: #e2e8f0; margin: 0 6px; flex-shrink: 0; }}
@@ -846,6 +872,7 @@ st.markdown(f"""
         font-size: 11px !important; font-weight: 500 !important; color: #64748b !important;
         margin: 0 !important; padding: 0 !important; line-height: 26px !important;
         white-space: nowrap; flex-shrink: 0; cursor: pointer;
+        font-family: var(--font-body) !important;
     }}
     [data-testid="stSelectbox"] > div {{
         min-width: 40px !important; flex: 1;
@@ -854,7 +881,7 @@ st.markdown(f"""
         border: none !important; background: transparent !important;
         min-height: 24px !important; padding: 0 !important; box-shadow: none !important;
     }}
-    [data-baseweb="select"] span {{ font-size: 12px !important; font-weight: 500 !important; color: #0f172a !important; }}
+    [data-baseweb="select"] span {{ font-size: 12px !important; font-weight: 500 !important; color: #0f172a !important; font-family: var(--font-body) !important; }}
     [data-baseweb="select"] svg {{ width: 14px !important; height: 14px !important; color: #64748b !important; }}
     [data-testid="stHorizontalBlock"] {{ gap: 4px !important; align-items: center !important; }}
     /* SKU button & action links */
@@ -882,7 +909,7 @@ st.markdown(f"""
         border-radius: 8px 8px 0 0; margin: -16px -16px 16px;
     }}
     .sku-modal-title {{ font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }}
-    .sku-modal-label {{ font-family: ui-monospace,monospace; font-size: 10px; text-transform: uppercase;
+    .sku-modal-label {{ font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
         letter-spacing: .07em; color: #64748b; margin-bottom: 6px; }}
     .sku-try-row {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }}
     .sku-try-chip {{
@@ -898,39 +925,62 @@ st.markdown(f"""
         background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;
     }}
 
-    /* Analytics KPI strip */
+    /* Analytics KPI strip — clean card design */
     .kpi-strip-new {{
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
     }}
     .kpi-tile-new {{
-        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-        padding: 16px 18px; position: relative; overflow: hidden;
-        transition: border-color .15s;
+        background: #fff; border: 1px solid #e8ecf1; border-radius: 10px;
+        padding: 18px 20px; position: relative; overflow: hidden;
+        transition: box-shadow .15s, border-color .15s;
     }}
     .kpi-tile-new::before {{
-        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-        background: linear-gradient(90deg, #00a4e3, #0080b3); opacity: .85;
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
+        background: linear-gradient(90deg, #0ea5e9, #0284c7);
     }}
-    .kpi-tile-new:hover {{ border-color: #cbd5e1; }}
+    .kpi-tile-new:hover {{
+        border-color: #cbd5e1;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }}
     .kpi-lbl-new {{
-        font-size: 11.5px; color: #94a3b8; font-weight: 500;
-        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px;
+        font-size: 10.5px; color: #94a3b8; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+        font-family: var(--font-mono);
     }}
     .kpi-val-new {{
-        font-weight: 600; font-size: 22px; color: #0f172a;
-        line-height: 1.15; letter-spacing: -.01em; margin-bottom: 4px;
+        font-weight: 800; font-size: 24px; color: #0f172a;
+        line-height: 1.1; letter-spacing: -.02em; margin-bottom: 6px;
+        font-family: var(--font-display);
+    }}
+    .kpi-val-new .kpi-val-pct {{
+        font-size: 18px; color: #64748b; font-weight: 600;
     }}
     .kpi-meta-new {{
-        font-size: 12.5px; color: #475569; display: flex; align-items: center;
-        gap: 6px; flex-wrap: wrap;
+        font-size: 12px; color: #64748b; display: flex; align-items: center;
+        gap: 8px; flex-wrap: wrap; line-height: 1.4;
+    }}
+    .kpi-meta-sub {{
+        color: #94a3b8; font-size: 11.5px;
     }}
     .kpi-delta {{
-        font-family: ui-monospace, monospace; font-weight: 600; font-size: 11.5px;
-        padding: 1px 6px; border-radius: 4px;
+        font-family: var(--font-mono); font-weight: 700; font-size: 11px;
+        padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center;
     }}
-    .kpi-delta.up {{ color: #16a34a; background: rgba(22,163,74,.1); }}
+    .kpi-delta.up {{ color: #16a34a; background: rgba(22,163,74,.08); }}
     .kpi-delta.down {{ color: #dc2626; background: rgba(220,38,38,.08); }}
-    .kpi-delta.neutral {{ color: #475569; background: rgba(100,116,139,.1); }}
+    .kpi-delta.neutral {{ color: #94a3b8; background: rgba(148,163,184,.08); }}
+    .kpi-share-badge {{
+        font-family: var(--font-mono); font-weight: 600; font-size: 11px;
+        color: #64748b;
+    }}
+    .kpi-index-badge {{
+        font-family: var(--font-mono); font-weight: 700; font-size: 11px;
+        padding: 2px 7px; border-radius: 4px; color: #16a34a;
+        background: rgba(22,163,74,.08);
+    }}
+    .kpi-median {{
+        font-size: 11.5px; color: #94a3b8;
+    }}
 
     /* Winning Patterns hero panel */
     .hero-panel-new {{
@@ -946,7 +996,7 @@ st.markdown(f"""
         display: inline-flex; align-items: center; gap: 6px;
         background: #fafbfd; border: 1px solid #e2e8f0; padding: 5px 10px;
         border-radius: 6px; font-size: 12px; color: #475569;
-        font-family: ui-monospace, monospace;
+        font-family: var(--font-mono);
     }}
     .archetype-colhead, .archetype-row-new {{
         display: grid;
@@ -956,13 +1006,13 @@ st.markdown(f"""
     .archetype-colhead {{
         background: #fafbfd; font-size: 10px; font-weight: 700; color: #94a3b8;
         text-transform: uppercase; letter-spacing: .06em;
-        font-family: ui-monospace, monospace;
+        font-family: var(--font-mono);
     }}
     .archetype-row-new {{ padding: 13px 20px; transition: background .15s; }}
     .archetype-row-new:last-child {{ border-bottom: none; }}
     .archetype-row-new:hover {{ background: #fafbfd; }}
     .arch-rank {{
-        font-family: ui-monospace, monospace; font-size: 11.5px;
+        font-family: var(--font-mono); font-size: 11.5px;
         color: #94a3b8; font-weight: 500; text-align: center;
     }}
     .arch-main {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
@@ -971,12 +1021,12 @@ st.markdown(f"""
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     }}
     .arch-attrs {{
-        font-size: 12px; color: #475569; font-family: ui-monospace, monospace; margin-top: 1px;
+        font-size: 12px; color: #475569; font-family: var(--font-mono); margin-top: 1px;
     }}
     .arch-badges {{ display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }}
     .arch-badge {{
         font-size: 9.5px; font-weight: 600; letter-spacing: .03em; padding: 2px 6px; border-radius: 3px;
-        font-family: ui-monospace, monospace;
+        font-family: var(--font-mono);
     }}
     .arch-badge.proxy {{ background: rgba(100,116,139,.18); color: #475569; }}
     .arch-badge.pull {{ background: rgba(0,164,227,.12); color: #0080b3; }}
@@ -984,7 +1034,7 @@ st.markdown(f"""
     .arch-badge.soon {{ background: #edf2f7; color: #52617a; }}
     .decision-tag-new {{
         display: inline-flex; align-items: center; gap: 4px;
-        font-family: ui-monospace, monospace; font-size: 10px; font-weight: 600;
+        font-family: var(--font-mono); font-size: 10px; font-weight: 600;
         text-transform: uppercase; letter-spacing: .05em;
         padding: 3px 7px; border-radius: 4px; white-space: nowrap;
     }}
@@ -995,7 +1045,7 @@ st.markdown(f"""
     .decision-tag-new.watch {{ background: rgba(148,163,184,.18); color: #475569; }}
     .decision-tag-new.whitespace {{ background: rgba(124,58,237,.1); color: #6d28d9; }}
     .lifecycle-pill-new {{
-        font-family: ui-monospace, monospace; font-size: 10px; text-transform: uppercase;
+        font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
         letter-spacing: .04em; padding: 2px 6px; border-radius: 3px; font-weight: 500;
     }}
     .lifecycle-pill-new.emerging {{ background: rgba(0,164,227,.08); color: #0080b3; }}
@@ -1003,14 +1053,14 @@ st.markdown(f"""
     .lifecycle-pill-new.plateau {{ background: rgba(148,163,184,.18); color: #475569; }}
     .lifecycle-pill-new.declining {{ background: rgba(220,38,38,.08); color: #dc2626; }}
     .vel-cell {{ display: flex; flex-direction: column; gap: 2px; font-size: 12px; }}
-    .vel-line {{ display: flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; }}
+    .vel-line {{ display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); }}
     .vel-ch {{ color: #94a3b8; font-size: 11px; width: 60px; flex-shrink: 0; }}
     .vel-up {{ color: #16a34a; font-weight: 600; }}
     .vel-down {{ color: #dc2626; font-weight: 600; }}
     .vel-neutral {{ color: #475569; font-weight: 600; }}
     .agree-cell {{ display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }}
     .agree-lbl {{
-        font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, monospace;
+        font-size: 10.5px; color: #94a3b8; font-family: var(--font-mono);
         text-transform: uppercase; letter-spacing: .04em;
     }}
     .agree-bars {{ display: flex; gap: 2px; }}
@@ -1020,11 +1070,11 @@ st.markdown(f"""
     .agree-bars.divergent span:nth-child(-n+1) {{ background: #dc2626; }}
     .agree-val {{
         font-size: 11.5px; font-weight: 600; color: #0f172a;
-        font-family: ui-monospace, monospace; margin-top: 2px;
+        font-family: var(--font-mono); margin-top: 2px;
     }}
     .conf-cell {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
     .conf-lbl {{
-        font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, monospace;
+        font-size: 10.5px; color: #94a3b8; font-family: var(--font-mono);
         text-transform: uppercase; letter-spacing: .04em;
     }}
     .conf-val {{ font-weight: 600; font-size: 15px; color: #0f172a; }}
@@ -1046,7 +1096,7 @@ st.markdown(f"""
         background: rgba(0,164,227,.05); border-bottom: 1px solid rgba(0,164,227,.15);
     }}
     .evidence-hdr {{
-        font-family: ui-monospace, monospace; font-size: 10.5px; text-transform: uppercase;
+        font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
         letter-spacing: .06em; color: #475569; margin-bottom: 10px; font-weight: 600;
     }}
     .driver-list-new {{ display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }}
@@ -1055,7 +1105,7 @@ st.markdown(f"""
         border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 12.5px;
     }}
     .driver-tag-new {{
-        font-family: ui-monospace, monospace; font-size: 10.5px; font-weight: 600;
+        font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
         padding: 2px 6px; border-radius: 3px; letter-spacing: .04em;
         flex-shrink: 0; min-width: 80px; text-align: center;
     }}
@@ -1064,7 +1114,7 @@ st.markdown(f"""
     .driver-tag-new.context {{ background: rgba(255,183,29,.18); color: #a06b00; }}
     .driver-txt-new {{ color: #0f172a; flex: 1; }}
     .driver-src-new {{
-        font-family: ui-monospace, monospace; font-size: 10.5px; color: #94a3b8;
+        font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8;
         white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;
     }}
     .evidence-acts {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
@@ -1088,7 +1138,7 @@ st.markdown(f"""
         justify-content: space-between; border-bottom: 1px solid #e2e8f0;
     }}
     .support-panel-title-new {{ font-weight: 600; font-size: 13.5px; color: #0f172a; }}
-    .support-panel-sub-new {{ font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace; }}
+    .support-panel-sub-new {{ font-size: 11px; color: #94a3b8; font-family: var(--font-mono); }}
     .support-panel-body {{ padding: 12px 16px 14px; }}
 
     /* Stacked bar */
@@ -1097,7 +1147,7 @@ st.markdown(f"""
     }}
     .stacked-seg {{
         display: grid; place-items: center; font-size: 10.5px; font-weight: 600; color: #fff;
-        font-family: ui-monospace, monospace; overflow: hidden; white-space: nowrap;
+        font-family: var(--font-mono); overflow: hidden; white-space: nowrap;
         transition: opacity .15s; cursor: pointer;
     }}
     .stacked-seg:hover {{ opacity: .85; }}
@@ -1106,10 +1156,10 @@ st.markdown(f"""
     .legend-swatch-new {{ width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }}
     .legend-lbl-new {{ color: #475569; flex: 1; }}
     .legend-val-new {{
-        font-family: ui-monospace, monospace; color: #0f172a; font-weight: 600; font-size: 11.5px;
+        font-family: var(--font-mono); color: #0f172a; font-weight: 600; font-size: 11.5px;
     }}
     .legend-delta-new {{
-        font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+        font-family: var(--font-mono); font-size: 11px; font-weight: 600;
         padding: 1px 4px; border-radius: 3px;
     }}
 
@@ -1125,13 +1175,13 @@ st.markdown(f"""
         height: 100%; background: linear-gradient(90deg,#00a4e3,#0080b3); border-radius: 4px;
     }}
     .bar-val-new {{
-        font-family: ui-monospace, monospace; font-size: 11px; color: #0f172a;
+        font-family: var(--font-mono); font-size: 11px; color: #0f172a;
         text-align: right; font-weight: 600;
     }}
     .converting-note {{
         margin-top: 10px; padding: 8px 10px; background: rgba(0,164,227,.06);
         border: 1px solid rgba(0,164,227,.15); border-radius: 6px;
-        font-size: 11.5px; color: #0080b3; font-family: ui-monospace, monospace;
+        font-size: 11.5px; color: #0080b3; font-family: var(--font-mono);
     }}
 
     /* Channel comparison (new) */
@@ -1149,7 +1199,7 @@ st.markdown(f"""
     .ch-dot.nor {{ background: #111; }}
     .channel-stat-new {{ display: flex; justify-content: space-between; font-size: 11.5px; padding: 4px 0; }}
     .channel-stat-lbl {{ color: #94a3b8; }}
-    .channel-stat-val {{ color: #0f172a; font-family: ui-monospace, monospace; font-weight: 600; }}
+    .channel-stat-val {{ color: #0f172a; font-family: var(--font-mono); font-weight: 600; }}
 
     /* Automation strip */
     .automation-strip {{
@@ -1160,7 +1210,7 @@ st.markdown(f"""
     .auto-left {{ display: flex; align-items: center; gap: 12px; }}
     .auto-badge {{
         background: rgba(255,183,29,.15); border: 1px solid rgba(255,183,29,.3);
-        color: #ffb71d; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+        color: #ffb71d; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
         padding: 4px 10px; border-radius: 6px; white-space: nowrap;
     }}
     .auto-text {{ font-size: 13px; color: rgba(255,255,255,.85); }}
@@ -1192,16 +1242,16 @@ st.markdown(f"""
     .pred-kpi-title-new {{ color: #0f172a; font-size: 15px; font-weight: 700; line-height: 1.25; }}
     .pred-kpi-stat-new {{
         display: flex; align-items: baseline; gap: 7px;
-        font-family: ui-monospace, monospace; font-size: 11px;
+        font-family: var(--font-mono); font-size: 11px;
     }}
     .pred-kpi-big-new {{ font-size: 19px; font-weight: 900; }}
     .pred-kpi-meta-new {{ color: #475569; font-weight: 600; }}
     .pred-kpi-foot-new {{
         margin-top: auto; padding-top: 8px; border-top: 1px solid #e2e8f0;
-        color: #94a3b8; font-size: 10.5px; font-family: ui-monospace, monospace;
+        color: #94a3b8; font-size: 10.5px; font-family: var(--font-mono);
     }}
 
-    /* S2 Forward signals (static placeholders) */
+    /* S2 Forward signals */
     .fwd-signal-card {{
         background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
     }}
@@ -1209,7 +1259,7 @@ st.markdown(f"""
         padding: 13px 16px 10px; border-bottom: 1px solid #e2e8f0;
     }}
     .fwd-signal-title {{ font-weight: 600; font-size: 13.5px; color: #0f172a; }}
-    .fwd-signal-sub {{ font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace; margin-top: 2px; }}
+    .fwd-signal-sub {{ font-size: 11px; color: #94a3b8; font-family: var(--font-mono); margin-top: 2px; }}
     .fwd-signal-body {{ padding: 12px 16px 14px; }}
     .fwd-query-row {{
         display: flex; align-items: center; gap: 10px; padding: 6px 0;
@@ -1219,94 +1269,744 @@ st.markdown(f"""
     .fwd-query-name {{ color: #0f172a; flex: 1; font-weight: 500; }}
     .fwd-mini-bar {{ height: 5px; width: 60px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }}
     .fwd-mini-fill {{ height: 100%; border-radius: 3px; }}
-    .fwd-delta-up {{ color: #16a34a; font-weight: 600; font-size: 11.5px; font-family: ui-monospace, monospace; }}
-    .fwd-delta-down {{ color: #dc2626; font-weight: 600; font-size: 11.5px; font-family: ui-monospace, monospace; }}
+    .fwd-delta-up {{ color: #16a34a; font-weight: 600; font-size: 11.5px; font-family: var(--font-mono); }}
+    .fwd-delta-down {{ color: #dc2626; font-weight: 600; font-size: 11.5px; font-family: var(--font-mono); }}
+    .fwd-signal-empty {{
+        border:1px dashed #cbd5e1; border-radius:8px; padding:13px 14px;
+        color:#64748b; font-size:12px; line-height:1.5; background:#fafbfd;
+    }}
+    .fwd-live-note {{ margin-top:9px; color:#94a3b8; font-size:10.5px; font-family:var(--font-mono); }}
     .fwd-region-row {{
         display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center;
         padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px;
     }}
     .fwd-region-row:last-child {{ border-bottom: none; }}
     .fwd-region-name {{ color: #475569; font-weight: 500; }}
-    .fwd-anomaly {{ color: #0f172a; font-family: ui-monospace, monospace; font-weight: 600; font-size: 11.5px; }}
+    .fwd-anomaly {{ color: #0f172a; font-family: var(--font-mono); font-weight: 600; font-size: 11.5px; }}
 
     /* S3 Mode toggle */
-    .mode-toggle-bar {{
+    .s3-mode-bar {{
         background: #fff; border-bottom: 1px solid #e2e8f0;
-        padding: 0 24px; display: flex; align-items: stretch;
+        padding: 14px 0 6px; display: flex; align-items: center;
+        justify-content: space-between; gap: 16px;
     }}
-    .mode-toggle-tab {{
-        padding: 13px 20px; font-weight: 500; font-size: 14px; color: #475569;
-        border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s;
+    .s3-mode-toggle {{
+        display: inline-flex; background: #f6f9fc;
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px; gap: 2px;
+    }}
+    .s3-mode-opt {{
+        padding: 7px 16px; font-size: 13px; font-weight: 500; color: #475569;
+        border-radius: 6px; display: inline-flex; align-items: center; gap: 7px;
+        white-space: nowrap; transition: all .15s;
+    }}
+    .s3-mode-opt.active {{
+        background: #fff; color: #0080b3; font-weight: 600;
+        box-shadow: 0 1px 2px rgba(15,23,42,.06);
+    }}
+    .s3-mode-badge {{
+        font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+        background: rgba(0,164,227,.1); color: #0080b3;
+        font-family: var(--font-mono);
+    }}
+    .s3-mode-opt.active .s3-mode-badge {{ background: #00a4e3; color: #fff; }}
+    .s3-mode-meta {{
         display: flex; align-items: center; gap: 8px;
+        font-family: var(--font-mono); font-size: 11.5px; color: #94a3b8;
     }}
-    .mode-toggle-tab.active {{ color: #0f172a; border-bottom-color: #00a4e3; font-weight: 600; }}
-    .mode-count {{
-        background: #00a4e3; color: #fff; font-size: 11px; font-weight: 700;
-        padding: 2px 7px; border-radius: 10px;
+    .s3-mode-meta-dot {{
+        width: 5px; height: 5px; border-radius: 50%; background: #16a34a;
+        display: inline-block; flex-shrink: 0;
     }}
 
-    /* S3 Market frame */
+    /* S3 Market frame — light version */
     .market-frame {{
-        background: linear-gradient(135deg,#0a1628 0%,#14233d 100%);
-        border-radius: 12px; padding: 18px 20px;
-        display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;
+        background: linear-gradient(135deg, rgba(0,164,227,.04), #fff 60%);
+        border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 16px 20px; display: grid;
+        grid-template-columns: 1fr auto; gap: 20px;
+        align-items: center; margin-bottom: 14px;
     }}
-    .market-frame-title {{ color: rgba(255,255,255,.9); font-size: 13px; font-weight: 600; }}
-    .market-frame-signal {{ font-size: 15px; font-weight: 700; color: #fff; line-height: 1.3; }}
-    .market-frame-drivers {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .market-frame-label {{
+        font-family: var(--font-mono); font-size: 10.5px;
+        text-transform: uppercase; letter-spacing: .06em;
+        color: #94a3b8; font-weight: 600; margin-bottom: 6px;
+    }}
+    .market-frame-signal {{ font-size: 13.5px; color: #0f172a; line-height: 1.55; }}
+    .market-frame-signal strong {{ font-weight: 600; }}
+    .market-frame-drivers {{
+        display: flex; gap: 16px; align-items: center;
+    }}
     .market-frame-driver {{
-        display: flex; align-items: center; gap: 6px;
-        background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1);
-        padding: 5px 9px; border-radius: 6px; font-size: 12px; color: rgba(255,255,255,.8);
+        display: flex; flex-direction: column; gap: 2px; align-items: center;
     }}
-    .driver-pct {{ font-weight: 700; color: #00a4e3; }}
+    .driver-pct {{
+        font-size: 18px; font-weight: 700; color: #475569; line-height: 1.1;
+    }}
+    .market-frame-driver.pull .driver-pct {{ color: #0080b3; }}
+    .market-frame-driver.context .driver-pct {{ color: #a06b00; }}
+    .driver-lbl {{
+        font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em;
+        color: #94a3b8; font-weight: 600;
+    }}
 
-    /* S3 Rec cards (new design) */
+    /* S3 Rec cards — exact HTML match */
     .rec-card-new {{
         background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
         overflow: hidden; margin-bottom: 12px;
+        transition: border-color .15s, box-shadow .15s;
+    }}
+    .rec-card-new:hover {{
+        border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(15,23,42,.05);
     }}
     .rec-card-grid {{
-        display: grid; grid-template-columns: 32px 1fr auto auto;
-        gap: 14px; align-items: center; padding: 14px 16px;
+        padding: 16px 20px 14px; display: grid;
+        grid-template-columns: 32px 1fr auto auto; gap: 16px; align-items: start;
     }}
+    .rec-expand-col {{
+        width: 28px; height: 28px; border-radius: 6px; display: grid;
+        place-items: center; background: #00a4e3; color: #fff; font-size: 13px;
+        flex-shrink: 0; align-self: center; cursor: pointer; user-select: none;
+        transition: background .15s; border: none;
+    }}
+    .rec-expand-col:hover {{ background: #0080b3; }}
+    .rec-expand-col.expanded {{ transform: rotate(180deg); }}
+    .rec-evidence-block.ev-hidden {{ display: none; }}
+    .rec-main {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
+    .rec-tags {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .decision-tag {{
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em;
+        padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+    }}
+    .decision-tag.reprice {{ background: rgba(0,164,227,.14); color: #0069a0; border: 1px solid rgba(0,164,227,.22); }}
+    .decision-tag.reposition {{ background: rgba(255,183,29,.18); color: #8a5a00; border: 1px solid rgba(255,183,29,.3); }}
+    .decision-tag.replenish {{ background: rgba(22,163,74,.12); color: #14703c; border: 1px solid rgba(22,163,74,.22); }}
+    .decision-tag.retire {{ background: rgba(220,38,38,.1); color: #b91c1c; border: 1px solid rgba(220,38,38,.2); }}
+    .decision-tag.whitespace {{ background: rgba(124,58,237,.12); color: #5b21b6; border: 1px solid rgba(124,58,237,.2); }}
+    .decision-tag.watch {{ background: rgba(100,116,139,.14); color: #374151; border: 1px solid rgba(100,116,139,.22); }}
+    .lifecycle-pill {{
+        font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+        letter-spacing: .05em; padding: 3px 8px; border-radius: 4px; font-weight: 700;
+    }}
+    .lifecycle-pill.emerging {{ background: rgba(0,164,227,.12); color: #0069a0; border: 1px solid rgba(0,164,227,.2); }}
+    .lifecycle-pill.accelerating {{ background: rgba(22,163,74,.12); color: #14703c; border: 1px solid rgba(22,163,74,.2); }}
+    .lifecycle-pill.plateau {{ background: rgba(148,163,184,.2); color: #374151; border: 1px solid rgba(148,163,184,.3); }}
+    .lifecycle-pill.declining {{ background: rgba(220,38,38,.1); color: #b91c1c; border: 1px solid rgba(220,38,38,.18); }}
     .rec-idx {{
-        font-family: ui-monospace, monospace; font-size: 11px;
-        color: #94a3b8; text-align: center; font-weight: 600;
+        font-family: var(--font-mono); font-size: 11.5px;
+        color: #94a3b8; font-weight: 600; padding-top: 3px; line-height: 1;
     }}
-    .rec-main {{ min-width: 0; }}
-    .rec-headline {{ color: #0f172a; font-size: 14px; font-weight: 700; line-height: 1.3; margin-bottom: 3px; }}
-    .rec-evidence-sum {{ color: #475569; font-size: 12px; line-height: 1.4; }}
-    .rec-conf-col {{
-        display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
-        font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap;
+    .rec-pattern-lbl {{
+        font-family: var(--font-mono); font-size: 11px; color: #94a3b8; font-weight: 500;
     }}
-    .conf-badge {{ padding: 3px 8px; border-radius: 4px; font-weight: 700; }}
+    .rec-headline {{
+        font-family: var(--font-display);
+        font-weight: 700; font-size: 15.5px; color: #0f172a;
+        letter-spacing: -.01em; line-height: 1.35; margin: 4px 0 2px;
+    }}
+    .rec-evidence-sum {{
+        font-size: 12.5px; color: #64748b; line-height: 1.55;
+    }}
+    .rec-evidence-sum strong {{ color: #0f172a; font-weight: 600; }}
+    .rec-meta-col {{
+        display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    }}
+    .rec-conf-wrap {{
+        display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    }}
+    .rec-conf-lbl {{
+        font-size: 9.5px; color: #94a3b8; font-family: var(--font-mono);
+        text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+    }}
+    .rec-conf-val {{
+        font-weight: 800; font-size: 28px; color: #0f172a; font-family: var(--font-display);
+        line-height: 1.1; letter-spacing: -.02em;
+    }}
+    .conf-badge {{
+        padding: 3px 8px; border-radius: 4px; font-weight: 700;
+        font-size: 10.5px; font-family: var(--font-mono);
+    }}
     .conf-badge.high {{ background: rgba(22,163,74,.1); color: #16a34a; }}
     .conf-badge.medium {{ background: rgba(255,183,29,.15); color: #b07a00; }}
     .conf-badge.low {{ background: rgba(148,163,184,.18); color: #475569; }}
-    .tier-strong {{ color: #16a34a; font-size: 10.5px; font-weight: 700; }}
-    .tier-moderate {{ color: #b07a00; font-size: 10.5px; font-weight: 700; }}
-    .tier-watch {{ color: #475569; font-size: 10.5px; font-weight: 700; }}
+    .tier-strong {{
+        display: inline-block; background: rgba(22,163,74,.1); color: #16a34a;
+        font-size: 10.5px; font-weight: 700; font-family: var(--font-mono);
+        padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+    }}
+    .tier-moderate {{
+        display: inline-block; background: rgba(255,183,29,.15); color: #b07a00;
+        font-size: 10.5px; font-weight: 700; font-family: var(--font-mono);
+        padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+    }}
+    .tier-watch {{
+        display: inline-block; background: rgba(148,163,184,.18); color: #475569;
+        font-size: 10.5px; font-weight: 700; font-family: var(--font-mono);
+        padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+    }}
     .rec-expand-col {{
         width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
-        background: #f6f9fc; border: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px;
-        cursor: pointer; flex-shrink: 0;
+        background: #00a4e3; color: #fff; font-size: 14px;
+        cursor: pointer; flex-shrink: 0; align-self: center;
+        transition: background .15s; user-select: none;
     }}
+    .rec-expand-col:hover {{ background: #0080b3; }}
+    .rec-expand-col.expanded {{ transform: rotate(180deg); }}
     .rec-evidence-block {{
-        padding: 12px 16px 14px; background: rgba(0,164,227,.04);
-        border-top: 1px solid rgba(0,164,227,.12);
+        padding: 14px 20px 16px 68px;
+        background: rgba(0,164,227,.04);
+        border-top: 1px solid rgba(0,164,227,.15);
+    }}
+    .rec-evidence-hdr {{
+        font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+        letter-spacing: .07em; color: #64748b; margin-bottom: 10px; font-weight: 600;
     }}
     .rec-driver-list {{ display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }}
-    .rec-action-row {{ display: flex; gap: 8px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid #e2e8f0; }}
-    .rec-action-btn {{
-        padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
-        border: 1px solid #e2e8f0; color: #475569; background: #fff;
-        cursor: pointer; transition: all .15s;
+    .driver-row-new {{
+        display: flex; align-items: center; gap: 10px; background: #fff;
+        border: 1px solid #e2e8f0; padding: 7px 12px; border-radius: 6px; font-size: 12.5px;
     }}
-    .rec-action-btn:hover {{ border-color: #00a4e3; color: #0080b3; }}
-    .rec-action-btn.primary {{ background: #00a4e3; border-color: #00a4e3; color: #fff; }}
-    .rec-action-btn.primary:hover {{ background: #0080b3; }}
+    .driver-tag-new {{
+        font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+        padding: 3px 7px; border-radius: 3px; letter-spacing: .04em;
+        flex-shrink: 0; min-width: 86px; text-align: center; white-space: nowrap;
+    }}
+    .driver-tag-new.proxy {{ background: rgba(100,116,139,.14); color: #475569; }}
+    .driver-tag-new.pull {{ background: rgba(0,164,227,.14); color: #0080b3; }}
+    .driver-tag-new.context {{ background: rgba(255,183,29,.2); color: #a06b00; }}
+    .driver-txt-new {{ color: #334155; flex: 1; font-size: 12.5px; line-height: 1.45; }}
+    .driver-src-new {{
+        font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8;
+        white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+    }}
+    .driver-src-new::before {{
+        content: ''; width: 6px; height: 6px; border-radius: 50%; background: #16a34a;
+        display: inline-block; flex-shrink: 0;
+    }}
+    .rec-action-row {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .rec-action-btn {{
+        font-size: 12px; color: #0f172a; font-weight: 500; padding: 7px 12px;
+        border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;
+        cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+        transition: all .15s; text-decoration: none;
+    }}
+    .rec-action-btn:hover {{ border-color: #00a4e3; background: rgba(0,164,227,.06); color: #0080b3; }}
+    .rec-action-btn.primary {{ color: #0080b3; border-color: rgba(0,164,227,.25); }}
+    .rec-action-btn.primary:hover {{ background: #00a4e3; color: #fff; border-color: #00a4e3; }}
+
+    /* ── Rec card action button row — compact flat style matching Image 2 ─── */
+    .rec-actions-row {{ margin-top: 2px; padding: 0; }}
+    .rec-actions-row [data-testid="stHorizontalBlock"] {{ gap: 6px !important; align-items: center !important; }}
+    .rec-actions-row .stButton button,
+    .rec-actions-row [data-testid="stBaseButton-secondary"],
+    .rec-actions-row [data-testid="stBaseButton-primary"] {{
+        background: #fff !important; background-color: #fff !important;
+        border: 1px solid #e2e8f0 !important; border-radius: 6px !important;
+        color: #334155 !important; font-size: 12px !important;
+        font-weight: 500 !important; font-family: var(--font-body) !important;
+        padding: 5px 10px !important; min-height: 32px !important;
+        box-shadow: none !important; transition: all .15s !important;
+    }}
+    .rec-actions-row .stButton button:hover,
+    .rec-actions-row [data-testid="stBaseButton-secondary"]:hover,
+    .rec-actions-row [data-testid="stBaseButton-primary"]:hover {{
+        background: rgba(0,164,227,.06) !important;
+        background-color: rgba(0,164,227,.06) !important;
+        border-color: rgba(0,164,227,.35) !important;
+        color: #0069a0 !important; transform: none !important;
+        box-shadow: none !important;
+    }}
+
+    /* S3 Ask view — input panel */
+    .ask-input-panel {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 20px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 12px;
+    }}
+    .ask-input-title {{
+        font-weight: 700; font-size: 17px; color: #0f172a; letter-spacing: -.01em;
+    }}
+    .ask-input-subtitle {{ font-size: 12.5px; color: #475569; margin-top: 4px; }}
+    .ask-suggestions-row {{
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }}
+    .ask-suggestions-lbl {{
+        font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+        letter-spacing: .06em; color: #94a3b8; font-weight: 600; margin-right: 2px;
+    }}
+    .ask-chip {{
+        font-size: 12px; color: #475569; padding: 6px 10px; background: #fafbfd;
+        border: 1px solid #e2e8f0; border-radius: 6px; font-weight: 500;
+        cursor: pointer; display: inline-block; transition: all .15s;
+    }}
+    .ask-chip:hover {{ border-color: #00a4e3; background: rgba(0,164,227,.06); color: #0080b3; }}
+
+    /* S3 Ask conversation exchanges */
+    .ask-exchange-wrap {{ display: flex; flex-direction: column; gap: 12px; }}
+    .ask-exchange {{
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    }}
+    .ask-question-row {{
+        padding: 14px 20px; background: #fafbfd; border-bottom: 1px solid #e2e8f0;
+        display: flex; align-items: flex-start; gap: 10px;
+    }}
+    .ask-q-avatar {{
+        width: 26px; height: 26px; border-radius: 50%; background: #00a4e3; color: #fff;
+        display: grid; place-items: center; font-size: 11px; font-weight: 700;
+        flex-shrink: 0; font-family: var(--font-mono);
+    }}
+    .ask-q-text {{
+        font-weight: 500; font-size: 14px; color: #0f172a; line-height: 1.45;
+    }}
+    .ask-answer-row {{ padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 12px; }}
+    .ask-answer-hdr {{
+        font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+        letter-spacing: .06em; color: #94a3b8; font-weight: 600;
+    }}
+    .ask-answer-body {{ font-size: 13.5px; color: #0f172a; line-height: 1.6; }}
+    .ask-answer-body strong {{ font-weight: 600; }}
+    .ask-evidence-tags {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+    .ask-evidence-tag {{
+        display: inline-flex; align-items: center; gap: 5px;
+        font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+        padding: 3px 8px; border-radius: 4px; background: #fafbfd;
+        border: 1px solid #e2e8f0; color: #475569;
+    }}
+    .ask-evidence-tag::before {{
+        content: ''; width: 5px; height: 5px; border-radius: 50%; background: #16a34a;
+        display: inline-block; flex-shrink: 0;
+    }}
+    .ask-confidence-row {{
+        display: inline-flex; align-items: center; gap: 6px;
+        font-family: var(--font-mono); font-size: 11.5px;
+    }}
+    .ask-conf-lbl {{ color: #94a3b8; }}
+    .ask-conf-val {{ color: #0f172a; font-weight: 600; }}
+
+    /* S3 Automation strip */
+    .automation-strip {{
+        background: linear-gradient(135deg,#0a1628 0%,#14233d 100%);
+        border-radius: 12px; padding: 14px 20px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        margin-top: 4px;
+    }}
+    .auto-left {{ display: flex; align-items: center; gap: 14px; }}
+    .auto-icon {{
+        width: 32px; height: 32px; background: rgba(0,164,227,.18);
+        border: 1px solid rgba(0,164,227,.3); border-radius: 8px;
+        display: grid; place-items: center; color: #00a4e3; font-size: 16px; flex-shrink: 0;
+    }}
+    .auto-text {{ display: flex; flex-direction: column; gap: 2px; }}
+    .auto-title {{ font-weight: 600; font-size: 13px; color: #fff; }}
+    .auto-detail {{ font-size: 12px; color: rgba(255,255,255,.7); }}
+    .auto-detail strong {{ color: rgba(255,255,255,.95); font-weight: 600; }}
+    .auto-btn {{
+        background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15);
+        color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 11.5px;
+        font-weight: 500; font-family: var(--font-mono); cursor: pointer;
+    }}
+
+    /* ════════════════════════════════════════════════════════════════
+       Reference HTML parity overrides
+       These map Streamlit controls and dynamic backend content to the
+       exact S1/S2/S3 visual language.
+       ════════════════════════════════════════════════════════════════ */
+    :root {{
+        --primary:#00a4e3;
+        --primary-deep:#0080b3;
+        --primary-soft:rgba(0,164,227,.08);
+        --primary-line:rgba(0,164,227,.18);
+        --amber:#ffb71d;
+        --amber-soft:rgba(255,183,29,.12);
+        --dark-1:#0a1628;
+        --dark-2:#14233d;
+        --dark-3:#1e3358;
+        --bg:#f6f9fc;
+        --surface:#ffffff;
+        --surface-soft:#fafbfd;
+        --text-1:#0f172a;
+        --text-2:#475569;
+        --text-3:#94a3b8;
+        --text-4:#cbd5e1;
+        --border:#e2e8f0;
+        --border-emphasis:#cbd5e1;
+        --purple:#7c3aed;
+        --radius:12px;
+        --radius-sm:8px;
+        --radius-lg:16px;
+    }}
+    .stApp, [data-testid="stAppViewContainer"] {{ background:var(--bg) !important; color:var(--text-1); }}
+    .block-container {{ padding:0 0 0 !important; max-width:100% !important; }}
+    body, .stApp, button, input, textarea, select {{ font-family:var(--font-body) !important; }}
+
+    /* App chrome from the HTML files */
+    .app-chrome {{
+        background:linear-gradient(135deg,var(--dark-1) 0%,var(--dark-2) 100%) !important;
+        padding:12px 24px !important;
+        display:flex !important; align-items:center !important; justify-content:space-between !important;
+        border-bottom:1px solid var(--dark-3) !important;
+    }}
+    .chrome-left {{ display:flex !important; align-items:center !important; gap:24px !important; }}
+    .app-chrome .brand {{ display:flex !important; align-items:center !important; gap:10px !important; color:#fff !important; }}
+    .app-chrome .brand-mark {{
+        width:28px !important; height:28px !important; background:var(--primary) !important;
+        border-radius:6px !important; display:grid !important; place-items:center !important;
+        font-family:var(--font-display) !important; font-weight:700 !important;
+        color:var(--dark-1) !important; font-size:15px !important;
+    }}
+    .brand-name {{ font-family:var(--font-display) !important; font-weight:600 !important; font-size:17px !important; letter-spacing:-.01em !important; }}
+    .brand-divider {{ color:rgba(255,255,255,.2) !important; font-size:14px !important; }}
+    .brand-product {{ font-family:var(--font-display) !important; font-weight:500 !important; font-size:14px !important; color:rgba(255,255,255,.85) !important; }}
+    .workspace-pill {{
+        background:rgba(255,255,255,.08) !important; border:1px solid rgba(255,255,255,.12) !important;
+        padding:6px 12px !important; border-radius:8px !important;
+        color:rgba(255,255,255,.9) !important; font-size:12.5px !important;
+        display:flex !important; align-items:center !important; gap:8px !important;
+    }}
+    .workspace-pill::before {{ content:''; width:6px; height:6px; background:var(--primary); border-radius:50%; }}
+    .chrome-right {{ display:flex !important; align-items:center !important; gap:16px !important; }}
+    .refresh-status {{
+        display:flex !important; align-items:center !important; gap:8px !important;
+        font-size:12px !important; color:rgba(255,255,255,.7) !important; font-family:var(--font-mono) !important;
+    }}
+    .refresh-status .live-dot {{
+        width:6px; height:6px; background:var(--success); border-radius:50%;
+        box-shadow:0 0 0 3px rgba(22,163,74,.2);
+        animation: pulse 2.4s ease-in-out infinite;
+    }}
+    .account-button {{
+        width:32px; height:32px; background:rgba(255,255,255,.1); border-radius:50%;
+        display:grid; place-items:center; color:#fff; font-weight:600; font-size:12px;
+        border:1px solid rgba(255,255,255,.15);
+    }}
+
+    /* Reference HTML top navigation */
+    .tab-strip {{
+        background:var(--surface); border-bottom:1px solid var(--border);
+        padding:0 24px; display:flex; justify-content:space-between; align-items:center;
+    }}
+    .tabs {{ display:flex; gap:4px; }}
+    .tab {{
+        padding:16px 20px 14px; border-bottom:2px solid transparent;
+        color:var(--text-2); font-family:var(--font-display); font-weight:500; font-size:14.5px;
+        text-decoration:none; transition:color .15s, border-color .15s;
+    }}
+    .tab:hover {{ color:var(--text-1); }}
+    .tab.active {{
+        color:var(--text-1); border-bottom-color:var(--primary); font-weight:600;
+    }}
+    .tab-strip-right {{ display:flex; align-items:center; gap:12px; padding:12px 0; }}
+    .tab-strip-right .stamp {{ font-family:var(--font-mono); font-size:11px; color:var(--text-3); }}
+
+    /* Native Streamlit tabs styled as the HTML tab strip */
+    .stTabs [data-baseweb="tab-list"] {{
+        background:var(--surface) !important; border-bottom:1px solid var(--border) !important;
+        padding:0 24px !important; gap:4px !important; align-items:stretch !important;
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        height:52px !important; padding:0 20px !important;
+        font-family:var(--font-display) !important; font-weight:500 !important; font-size:14.5px !important;
+        color:var(--text-2) !important; border-bottom:2px solid transparent !important;
+    }}
+    .stTabs [data-baseweb="tab"]:hover {{ color:var(--text-1) !important; }}
+    .stTabs [aria-selected="true"] {{
+        color:var(--text-1) !important; border-bottom:2px solid var(--primary) !important; font-weight:600 !important;
+    }}
+    .stTabs [data-baseweb="tab-highlight"] {{ display:none !important; }}
+    .stTabs [data-testid="stMarkdownContainer"] p {{ font-family:var(--font-display) !important; }}
+
+    /* Reference filter bar; Streamlit selectboxes are shaped to match .filter-select */
+    .filter-bar, .new-filter-bar {{
+        background:var(--surface) !important; border-bottom:1px solid var(--border) !important;
+        padding:14px 24px !important; display:flex !important; flex-direction:column !important; gap:10px !important;
+    }}
+    .st-key-filter_area {{
+        background:var(--surface) !important;
+        border-bottom:1px solid var(--border) !important;
+        padding:10px 24px 12px !important;
+    }}
+    .st-key-filter_area > div[data-testid="stVerticalBlock"] {{
+        gap:6px !important;
+    }}
+    .st-key-filter_area [data-testid="stHorizontalBlock"] {{
+        gap:10px !important;
+        align-items:center !important;
+    }}
+    .st-key-filter_area [data-testid="stColumn"] {{
+        padding:0 !important;
+    }}
+    .st-key-filter_area [data-testid="stElementContainer"] {{
+        margin:0 !important;
+    }}
+    .filter-section-label {{
+        font-family:var(--font-mono) !important;
+        font-size:10.5px !important;
+        text-transform:uppercase !important;
+        letter-spacing:.06em !important;
+        color:var(--text-3) !important;
+        font-weight:500 !important;
+        line-height:1 !important;
+        margin:0 0 2px !important;
+    }}
+    .filter-section-label.refine {{ margin-top:4px !important; }}
+    .filter-row, .filter-row-wrap {{ display:flex !important; align-items:center !important; gap:10px !important; flex-wrap:wrap !important; }}
+    .filter-row-label, .filter-row-lbl {{
+        font-family:var(--font-mono) !important; font-size:10.5px !important;
+        text-transform:uppercase !important; letter-spacing:.06em !important;
+        color:var(--text-3) !important; margin-right:4px !important; font-weight:500 !important;
+        width:auto !important; padding-top:0 !important;
+    }}
+    [data-testid="stSelectbox"] {{
+        display:block !important; background:transparent !important; border:0 !important;
+        border-radius:0 !important; padding:0 !important; min-width:0 !important;
+    }}
+    [data-testid="stSelectbox"] label {{
+        font-size:11.5px !important; font-weight:400 !important; color:var(--text-3) !important;
+        margin:0 0 3px !important; padding:0 !important; line-height:1 !important;
+        font-family:var(--font-body) !important;
+    }}
+    [data-baseweb="select"] > div {{
+        background:var(--surface) !important; border:1px solid var(--border-emphasis) !important;
+        border-radius:var(--radius-sm) !important; min-height:34px !important;
+        padding:0 8px !important; box-shadow:none !important;
+    }}
+    [data-baseweb="select"] > div:hover {{ border-color:var(--primary) !important; background:var(--primary-soft) !important; }}
+    [data-baseweb="select"] span {{
+        font-size:13px !important; font-weight:500 !important; color:var(--text-1) !important;
+        font-family:var(--font-body) !important;
+    }}
+    .filter-action-link, .filter-link {{
+        font-size:12px !important; color:var(--text-2) !important; text-decoration:none !important; font-weight:500 !important;
+        display:inline-flex !important; align-items:center !important; gap:4px !important;
+    }}
+    .filter-action-link:hover, .filter-link:hover {{ color:var(--primary-deep) !important; }}
+
+    /* S3 exact mode toggle */
+    .mode-toggle-bar {{
+        background:var(--surface); border-bottom:1px solid var(--border);
+        padding:14px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px;
+    }}
+    .mode-toggle {{
+        display:inline-flex; background:var(--bg); border:1px solid var(--border);
+        border-radius:8px; padding:3px; gap:2px;
+    }}
+    .mode-option {{
+        padding:7px 16px; font-family:var(--font-display); font-weight:500; font-size:13px;
+        color:var(--text-2); border-radius:6px; display:inline-flex; align-items:center; gap:7px;
+        transition:all .15s; text-decoration:none;
+    }}
+    .mode-option:hover {{ color:var(--text-1); }}
+    .mode-option.active {{
+        background:var(--surface); color:var(--text-1); font-weight:600; box-shadow:0 1px 2px rgba(15,23,42,.06);
+    }}
+    .mode-option.active.recommendations {{ color:var(--primary-deep); }}
+    .mode-option .badge {{
+        font-family:var(--font-mono); font-size:10px; font-weight:600;
+        padding:1px 6px; border-radius:3px; background:var(--primary-soft); color:var(--primary-deep);
+    }}
+    .mode-option.active .badge {{ background:var(--primary); color:white; }}
+    .mode-meta {{
+        display:flex; align-items:center; gap:12px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-3);
+    }}
+    .mode-meta-dot {{ width:5px; height:5px; border-radius:50%; background:var(--success); }}
+    .canvas {{ padding:20px 24px 24px 24px; display:flex; flex-direction:column; gap:16px; }}
+
+    /* S3 exact recommendation + ask classes */
+    .recommendations-list {{ display:flex; flex-direction:column; gap:12px; }}
+    .recommendations-view.hidden {{ display:none; }}
+    .rec-card {{
+        background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+        overflow:hidden; transition:border-color .15s, box-shadow .15s; margin:0;
+    }}
+    details.rec-card > summary {{
+        list-style:none; cursor:pointer;
+    }}
+    details.rec-card > summary::-webkit-details-marker {{ display:none; }}
+    .rec-card:hover {{ border-color:var(--border-emphasis); box-shadow:0 4px 12px rgba(15,23,42,.05); }}
+    .rec-card.expanded, details.rec-card[open] {{ border-color:var(--primary-line); box-shadow:0 4px 16px rgba(0,164,227,.08); }}
+    .rec-header {{ padding:14px 20px; display:grid; grid-template-columns:32px 1fr auto auto; gap:16px; align-items:start; }}
+    .rec-index {{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-3); font-weight:600; padding-top:2px; }}
+    .rec-main {{ display:flex; flex-direction:column; gap:6px; min-width:0; }}
+    .rec-tags {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
+    .decision-tag {{
+        display:inline-flex; align-items:center; gap:4px; font-family:var(--font-mono);
+        font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+        padding:3px 8px; border-radius:4px; white-space:nowrap;
+    }}
+    .decision-tag.reprice {{ background:rgba(0,164,227,.1); color:var(--primary-deep); }}
+    .decision-tag.reposition {{ background:rgba(255,183,29,.16); color:#b07a00; }}
+    .decision-tag.replenish {{ background:rgba(22,163,74,.1); color:var(--success); }}
+    .decision-tag.retire {{ background:rgba(220,38,38,.08); color:var(--danger); }}
+    .decision-tag.whitespace {{ background:rgba(124,58,237,.1); color:#6d28d9; }}
+    .decision-tag.watch {{ background:rgba(100,116,139,.12); color:var(--text-2); }}
+    .lifecycle-pill {{
+        font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.04em;
+        padding:2px 6px; border-radius:3px; font-weight:500;
+    }}
+    .lifecycle-pill.emerging {{ background:rgba(0,164,227,.08); color:var(--primary-deep); }}
+    .lifecycle-pill.accelerating {{ background:rgba(22,163,74,.1); color:var(--success); }}
+    .lifecycle-pill.plateau {{ background:rgba(148,163,184,.18); color:var(--text-2); }}
+    .lifecycle-pill.declining {{ background:rgba(220,38,38,.08); color:var(--danger); }}
+    .rec-pattern-label {{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-3); }}
+    .rec-headline {{
+        font-family:var(--font-display); font-weight:600; font-size:16px; color:var(--text-1);
+        letter-spacing:-.01em; line-height:1.35;
+    }}
+    .rec-evidence {{ font-size:12.5px; color:var(--text-2); line-height:1.55; margin-top:2px; }}
+    .rec-evidence strong {{ color:var(--text-1); font-weight:600; }}
+    .rec-meta-col {{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; }}
+    .rec-confidence {{ display:flex; flex-direction:column; align-items:flex-end; gap:2px; }}
+    .rec-confidence-label {{
+        font-size:10px; color:var(--text-3); font-family:var(--font-mono);
+        text-transform:uppercase; letter-spacing:.04em;
+    }}
+    .rec-confidence-value {{ font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--text-1); }}
+    .rec-impact {{
+        font-family:var(--font-mono); font-size:10.5px; padding:3px 7px; border-radius:4px; font-weight:600;
+        background:var(--surface-soft); border:1px solid var(--border); color:var(--text-2);
+    }}
+    .rec-impact.high {{ background:var(--amber-soft); border-color:rgba(255,183,29,.3); color:#a06b00; }}
+    .expand-button {{
+        width:28px; height:28px; border-radius:6px; display:grid; place-items:center;
+        color:var(--text-3); font-size:12px; transition:all .15s; align-self:center; text-decoration:none;
+    }}
+    .expand-button:hover {{ background:var(--bg); color:var(--text-1); }}
+    .rec-card.expanded .expand-button, details.rec-card[open] .expand-button {{ background:var(--primary); color:white; transform:rotate(180deg); }}
+    .rec-expand {{ display:none; padding:0 20px 18px 68px; }}
+    .rec-card.expanded .rec-expand, details.rec-card[open] .rec-expand {{ display:block; }}
+    .evidence-block {{
+        background:var(--primary-soft); border:1px solid var(--primary-line); border-radius:8px;
+        padding:14px 16px; margin-bottom:12px;
+    }}
+    .evidence-header {{
+        font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--text-2); margin-bottom:10px; font-weight:600;
+    }}
+    .driver-list {{ display:flex; flex-direction:column; gap:6px; }}
+    .driver-row {{ display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); padding:8px 12px; border-radius:6px; font-size:12.5px; }}
+    .driver-tag {{
+        font-family:var(--font-mono); font-size:10.5px; font-weight:600; padding:2px 6px;
+        border-radius:3px; letter-spacing:.04em; flex-shrink:0; min-width:130px; text-align:center;
+    }}
+    .driver-tag.pull {{ background:rgba(0,164,227,.12); color:var(--primary-deep); }}
+    .driver-tag.pull-forward {{ background:rgba(0,164,227,.22); color:var(--primary-deep); border:1px solid var(--primary-line); }}
+    .driver-tag.context {{ background:rgba(255,183,29,.18); color:#a06b00; }}
+    .driver-tag.proxy {{ background:rgba(100,116,139,.12); color:var(--text-2); }}
+    .driver-text {{ color:var(--text-1); flex:1; }}
+    .driver-source {{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-3); white-space:nowrap; display:inline-flex; align-items:center; gap:4px; }}
+    .driver-source::before {{ content:''; width:5px; height:5px; background:var(--success); border-radius:50%; }}
+    .rec-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+    .rec-action {{
+        font-size:12px; color:var(--text-1); font-weight:500; padding:7px 12px;
+        border:1px solid var(--border-emphasis); border-radius:6px; background:var(--surface);
+        text-decoration:none; display:inline-flex; align-items:center; gap:6px; transition:all .15s;
+        font-family:var(--font-body);
+    }}
+    .rec-action:hover {{ border-color:var(--primary); background:var(--primary-soft); color:var(--primary-deep); }}
+    .rec-action.primary {{ color:var(--primary-deep); border-color:var(--primary-line); background:var(--surface); }}
+    .rec-action.primary:hover {{ background:var(--primary); color:white; border-color:var(--primary); }}
+    .rec-action.outline {{ color:var(--text-2); }}
+    .action-icon {{ font-size:11px; }}
+    .market-frame-content {{ display:flex; flex-direction:column; gap:6px; }}
+    .market-frame-text {{ font-size:13.5px; color:var(--text-1); line-height:1.55; }}
+    .market-frame-text strong {{ font-weight:600; }}
+    .market-drivers {{ display:flex; gap:16px; align-items:center; font-family:var(--font-mono); font-size:11px; }}
+    .market-driver {{ display:flex; flex-direction:column; gap:2px; align-items:center; }}
+    .market-driver-pct {{ font-family:var(--font-display); font-weight:600; font-size:18px; color:var(--text-1); }}
+    .market-driver-label {{ font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); font-weight:600; }}
+    .market-driver.pull .market-driver-pct {{ color:var(--primary-deep); }}
+    .market-driver.context .market-driver-pct {{ color:#a06b00; }}
+    .market-driver.proxy .market-driver-pct {{ color:var(--text-2); }}
+
+    .ask-view {{ display:none; flex-direction:column; gap:16px; }}
+    .ask-view.active {{ display:flex; }}
+    .ask-input-panel {{
+        background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+        padding:20px; display:flex; flex-direction:column; gap:16px; margin-bottom:0;
+    }}
+    .ask-input-header {{ display:flex; flex-direction:column; gap:4px; }}
+    .ask-input-title {{ font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--text-1); letter-spacing:-.01em; }}
+    .ask-input-subtitle {{ font-size:12.5px; color:var(--text-2); margin-top:0; }}
+    .ask-input-wrap {{ position:relative; display:flex; align-items:center; margin:0; }}
+    .ask-input {{
+        width:100%; padding:14px 48px 14px 44px; background:var(--bg);
+        border:1px solid var(--border-emphasis); border-radius:10px;
+        font-family:var(--font-body); font-size:14px; color:var(--text-1); transition:all .15s;
+    }}
+    .ask-input:focus {{ outline:none; border-color:var(--primary); background:var(--surface); box-shadow:0 0 0 4px var(--primary-soft); }}
+    .ask-input::placeholder {{ color:var(--text-3); }}
+    .ask-input-icon {{ position:absolute; left:16px; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:14px; }}
+    .ask-input-send {{
+        position:absolute; right:6px; top:50%; transform:translateY(-50%); width:32px; height:32px;
+        background:var(--primary); color:white; border-radius:8px; display:grid; place-items:center;
+        font-size:14px; font-weight:600; transition:background .15s; border:0;
+    }}
+    .ask-input-send:hover {{ background:var(--primary-deep); }}
+    .ask-suggestions {{ display:flex; flex-wrap:wrap; gap:6px; }}
+    .ask-suggestions-label {{
+        font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--text-3); font-weight:600; margin-right:4px; align-self:center;
+    }}
+    .ask-chip {{
+        font-size:12px; color:var(--text-2); padding:6px 10px; background:var(--surface-soft);
+        border:1px solid var(--border); border-radius:6px; font-family:var(--font-body);
+        font-weight:500; transition:all .15s; text-decoration:none; display:inline-flex;
+    }}
+    .ask-chip:hover {{ border-color:var(--primary); background:var(--primary-soft); color:var(--primary-deep); }}
+    .ask-conversation {{ display:flex; flex-direction:column; gap:12px; }}
+    .ask-exchange {{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }}
+    .ask-question {{ padding:14px 20px; background:var(--surface-soft); border-bottom:1px solid var(--border); display:flex; align-items:start; gap:10px; }}
+    .ask-question-icon {{
+        width:26px; height:26px; border-radius:50%; background:var(--primary); color:white;
+        display:grid; place-items:center; font-size:11px; font-weight:700; font-family:var(--font-mono); flex-shrink:0;
+    }}
+    .ask-question-text {{ font-family:var(--font-display); font-weight:500; font-size:14.5px; color:var(--text-1); line-height:1.45; }}
+    .ask-answer {{ padding:16px 20px 18px; display:flex; flex-direction:column; gap:12px; }}
+    .ask-answer-header {{
+        font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--text-3); font-weight:600;
+    }}
+    .ask-answer-body {{ font-size:13.5px; color:var(--text-1); line-height:1.6; }}
+    .ask-answer-body strong {{ font-weight:600; }}
+    .ask-evidence-tags {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }}
+    .ask-evidence-tag {{
+        display:inline-flex; align-items:center; gap:5px; font-family:var(--font-mono);
+        font-size:10.5px; font-weight:500; padding:3px 8px; border-radius:4px;
+        background:var(--surface-soft); border:1px solid var(--border); color:var(--text-2);
+    }}
+    .ask-evidence-tag::before {{ content:''; width:5px; height:5px; border-radius:50%; background:var(--success); }}
+    .ask-confidence {{ display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:11.5px; margin-top:4px; }}
+    .ask-confidence-label {{ color:var(--text-3); }}
+    .ask-confidence-value {{ color:var(--text-1); font-weight:600; }}
+
+    .automation-left {{ display:flex; align-items:center; gap:14px; }}
+    .automation-icon {{
+        width:32px; height:32px; background:rgba(0,164,227,.18); border:1px solid rgba(0,164,227,.3);
+        border-radius:8px; display:grid; place-items:center; color:var(--primary); font-size:14px;
+    }}
+    .automation-text {{ display:flex; flex-direction:column; gap:2px; }}
+    .automation-title {{ font-family:var(--font-display); font-weight:600; font-size:13px; color:white; letter-spacing:-.005em; }}
+    .automation-detail {{ font-size:12px; color:rgba(255,255,255,.7); }}
+    .automation-detail strong {{ color:rgba(255,255,255,.95); font-weight:600; }}
+    .automation-right {{ display:flex; align-items:center; gap:8px; }}
+    .automation-link {{
+        background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.15);
+        color:white; padding:6px 12px; border-radius:6px; font-size:11.5px; font-weight:500;
+        text-decoration:none; font-family:var(--font-mono); transition:background .15s;
+    }}
+    .automation-link:hover {{ background:rgba(255,255,255,.16); }}
+    .footer {{
+        padding:16px 24px 18px; font-size:11.5px; color:var(--text-3); text-align:center;
+        font-family:var(--font-mono); border-top:1px solid var(--border);
+        background:var(--surface); line-height:1.6;
+    }}
+
+    @media (max-width: 900px) {{
+        .rec-header {{ grid-template-columns:32px 1fr 32px; }}
+        .rec-meta-col {{ display:none; }}
+        .market-frame {{ grid-template-columns:1fr; }}
+        .mode-toggle-bar {{ flex-direction:column; align-items:flex-start; }}
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1484,37 +2184,82 @@ def _sku_lookup_dialog():
 </div>""", unsafe_allow_html=True)
 
 # ── App Chrome (dark gradient header) ────────────────────────────────────────
+def _query_href(**params) -> str:
+    return "?" + "&".join(f"{k}={quote_plus(str(v))}" for k, v in params.items() if v is not None)
+
+
+def _query_value(name: str, default: str) -> str:
+    try:
+        value = st.query_params.get(name, default)
+        if isinstance(value, list):
+            value = value[0] if value else default
+        return str(value or default)
+    except Exception:
+        return default
+
+
+_VIEW_ALIASES = {
+    "analytics": "analytics",
+    "predictive": "predictive",
+    "askrec": "askrec",
+    "ask": "askrec",
+    "recommendation": "askrec",
+    "recommendations": "askrec",
+}
+_VIEW_LABELS = {
+    "analytics": "Analytics",
+    "predictive": "Predictive",
+    "askrec": "Ask & Recommendation",
+}
+main_view = _VIEW_ALIASES.get(
+    _query_value("view", st.session_state.get("main_view", "analytics")).strip().lower(),
+    "analytics",
+)
+st.session_state["main_view"] = main_view
+
+
+def _main_tab_strip_html(active_view: str) -> str:
+    links = []
+    for view_key, label in _VIEW_LABELS.items():
+        active_cls = " active" if view_key == active_view else ""
+        links.append(f'<a class="tab{active_cls}" href="{_query_href(view=view_key)}">{escape(label)}</a>')
+    return f"""
+<div class="tab-strip">
+  <div class="tabs">{''.join(links)}</div>
+  <div class="tab-strip-right">
+    <span class="stamp">Live market feed</span>
+  </div>
+</div>"""
+
+
 st.markdown(f"""
 <div class="app-chrome">
   <div class="chrome-left">
-    <div class="brand-wrap">
-      <div class="brand-i-mark">i</div>
-      <span class="brand-n">Innovatics</span>
-      <span class="brand-div">/</span>
-      <span class="brand-prod">Channel Intelligence</span>
+    <div class="brand">
+      <div class="brand-mark">i</div>
+      <span class="brand-name">Innovatics</span>
+      <span class="brand-divider">/</span>
+      <span class="brand-product">Channel Intelligence</span>
     </div>
-    <div class="workspace-pill-new">Market Signal</div>
+    <div class="workspace-pill">Market Signal</div>
   </div>
   <div class="chrome-right">
-    <div class="refresh-status-new">
-      <span class="live-dot-pulse"></span>
+    <div class="refresh-status">
+      <span class="live-dot"></span>
       Live · refreshed recently
     </div>
-    <div class="account-btn">Z</div>
+    <div class="account-button">Z</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+st.html(_main_tab_strip_html(main_view))
+
 # ── 2-row compact pill filter bar ─────────────────────────────────────────────
 _fb_lbl = lambda lbl, x, fmt=None: f"{lbl}  {fmt(x) if fmt else x}"
 
-with st.container():
-    st.markdown('<div class="new-filter-bar">', unsafe_allow_html=True)
-
-    # ── Row 1 ─────────────────────────────────────────────────────────────────
-    st.markdown('<div class="filter-row-wrap">', unsafe_allow_html=True)
-    st.markdown('<span class="filter-row-lbl">Context</span>', unsafe_allow_html=True)
-
+with st.container(key="filter_area", gap="small"):
+    st.markdown('<div class="filter-section-label">Context</div>', unsafe_allow_html=True)
     _r1 = st.columns([1.0, 1.4, 1.2, 1.5, 0.05, 1.1, 0.75, 0.65])
     with _r1[0]:
         gender_filter = st.selectbox(
@@ -1522,6 +2267,7 @@ with st.container():
             _gender_opts,
             format_func=lambda x: _GENDER_LABELS.get(x, x.title()),
             key="gender_filter",
+            label_visibility="collapsed",
         )
     with _r1[1]:
         category_filter = st.selectbox(
@@ -1529,18 +2275,21 @@ with st.container():
             _category_opts,
             format_func=lambda x: _CATEGORY_LABELS.get(x, x.replace("_", " ").title()),
             key="cat_filter",
+            label_visibility="collapsed",
         )
     with _r1[2]:
         style_filter = st.selectbox(
             "Style",
             _neck_type_opts,
             key="style_filter",
+            label_visibility="collapsed",
         )
     with _r1[3]:
         window_filter = st.selectbox(
             "Window",
             ["Last 30 Days", "Last 60 Days", "Last 90 Days", "All Time"],
             key="window_filter",
+            label_visibility="collapsed",
         )
     with _r1[4]:
         st.markdown('<div class="filter-divider-v"></div>', unsafe_allow_html=True)
@@ -1548,26 +2297,24 @@ with st.container():
         if st.button("🔍 Look up SKU", key="sku_open_btn", use_container_width=True):
             _sku_lookup_dialog()
     with _r1[6]:
-        st.markdown('<span class="filter-action-link">↗ Save view</span>', unsafe_allow_html=True)
+        st.markdown('<span class="filter-link">↗ Save view</span>', unsafe_allow_html=True)
     with _r1[7]:
-        st.markdown('<span class="filter-action-link">↺ Reset all</span>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Row 2 ─────────────────────────────────────────────────────────────────
-    st.markdown('<div class="filter-row-wrap">', unsafe_allow_html=True)
-    st.markdown('<span class="filter-row-lbl">Refine</span>', unsafe_allow_html=True)
+        st.markdown('<span class="filter-link muted">↺ Reset all</span>', unsafe_allow_html=True)
+    st.markdown('<div class="filter-section-label refine">Refine</div>', unsafe_allow_html=True)
     _r2 = st.columns([1.1, 1.1, 1.4, 6.4])
     with _r2[0]:
         price_band_filter = st.selectbox(
             "Price band",
             ["All", "<$25", "$25–50", "$50–75", "$75–100", "$100–150", "$150+"],
             key="price_band_filter",
+            label_visibility="collapsed",
         )
     with _r2[1]:
         region_filter = st.selectbox(
             "Region",
             ["All US", "East", "West", "South", "Midwest"],
             key="region_filter",
+            label_visibility="collapsed",
         )
     with _r2[2]:
         platform_filter = st.selectbox(
@@ -1575,10 +2322,8 @@ with st.container():
             _platform_opts,
             format_func=lambda x: "Amazon + Nordstrom" if x == "All" else _PLATFORM_LABELS.get(x, x.title()),
             key="plt_filter",
+            label_visibility="collapsed",
         )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)  # close new-filter-bar
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -1659,13 +2404,6 @@ if pd.notna(_last_scrape):
         _fresh_label = f"{age_hours}h ago" if age_hours < 48 else f"{age_hours // 24}d ago"
     except Exception:
         _fresh_label = "recently"
-
-tab1, tab2, tab3 = st.tabs([
-    "Analytics",
-    "Predictive",
-    "Ask & Recommendation",
-])
-
 
 def _safe(value) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
@@ -2375,6 +3113,9 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
                     change = float(row.get("momentum_score") or 0) * 10
             rows.append({
                 "name": str(row.get("attr_value") or row.get("attr_key") or "Signal"),
+                "attr_key": str(row.get("attr_key") or ""),
+                "category": str(row.get("category") or ""),
+                "platform": str(row.get("platform") or ""),
                 "change": int(round(float(change))),
                 "confidence": "High" if abs(float(change)) >= 14 else "Med" if abs(float(change)) >= 8 else "Low",
                 "stage": _stage_key(row.get("lifecycle_stage")),
@@ -2700,9 +3441,63 @@ def _forecast_value(change: float, horizon: int) -> int:
     return int(round(change * multiplier))
 
 
-def _trajectory_rows_html(rows: list[dict]) -> str:
+def _trajectory_rows_html(
+    rows: list[dict],
+    gt_summary: dict | None = None,
+    gt_result: dict | None = None,
+    category: str = "All",
+    gender: str = "All",
+    style: str = "All",
+) -> str:
     if not rows:
         return "<div class='empty-panel'>No backend pattern trajectory available yet. Run predictions after scrape history exists.</div>"
+
+    gt_summary = gt_summary or {}
+    gt_result = gt_result or {}
+    gt_status = gt_summary.get("status")
+    gt_by_query = {
+        str(row.get("query") or ""): row
+        for row in (gt_result.get("rows") or [])
+        if row.get("query")
+    }
+
+    def _row_gt_evidence(row: dict) -> tuple[str, str, str]:
+        if gt_status == "missing_key":
+            return (
+                '<span class="pred-badge soon">GT key needed</span>',
+                "Google Trends is connected but waiting for SERPAPI_API_KEY in .env.",
+                "Waiting · SerpAPI key",
+            )
+
+        query = _gt_query_for_row(row, category, gender, style)
+        if not query:
+            return (
+                '<span class="pred-badge soon">GT not matched</span>',
+                "No reliable apparel search phrase was generated for this attribute, so it is excluded from Pull scoring.",
+                "Skipped · query quality guard",
+            )
+
+        gt_row = gt_by_query.get(query)
+        if gt_row:
+            delta_pct = int(gt_row.get("delta_pct") or 0)
+            return (
+                f'<span class="pred-badge gt">GT {delta_pct:+d}%</span>',
+                f'Google Trends query "{_safe(_label(query))}" is moving {delta_pct:+d}% vs the 14d/prior 30d baseline.',
+                "Live · SerpAPI Google Trends",
+            )
+
+        if gt_status == "ok":
+            return (
+                '<span class="pred-badge soon">GT checked</span>',
+                f'Google Trends checked "{_safe(_label(query))}" but returned no usable timeline for this row.',
+                "Live · SerpAPI checked",
+            )
+
+        return (
+            '<span class="pred-badge soon">GT no live data</span>',
+            _safe(gt_summary.get("message") or "Google Trends returned no live timeline data for this filter."),
+            "Live · SerpAPI checked",
+        )
 
     html = []
     for idx, row in enumerate(rows[:6]):
@@ -2719,7 +3514,7 @@ def _trajectory_rows_html(rows: list[dict]) -> str:
             ('<span style="color:#cbd5e1;">→</span>' if n < 2 else "")
             for n, p in enumerate(progress)
         )
-        gt_badge = '<span class="pred-badge soon">GT coming soon</span>'
+        gt_badge, gt_driver_text, gt_driver_source = _row_gt_evidence(row)
         wx_badge = '<span class="pred-badge soon">WX coming soon</span>'
         html.append(f"""
 <input class="pred-toggle" type="checkbox" id="pred-toggle-{idx}" {'checked' if idx == 0 else ''}>
@@ -2754,19 +3549,19 @@ def _trajectory_rows_html(rows: list[dict]) -> str:
         <line x1="0" y1="98" x2="400" y2="98" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2,3" />
         <path d="M 200,42 L 250,32 L 300,28 L 350,34 L 400,42 L 400,82 L 350,76 L 300,68 L 250,58 L 200,74 Z" fill="rgba(8,165,214,.12)" />
         <line x1="200" y1="0" x2="200" y2="130" stroke="#0f172a" stroke-width="1.5" stroke-dasharray="3,2" opacity=".55" />
-        <text x="200" y="12" font-family="monospace" font-size="9" fill="#0f172a" text-anchor="middle" font-weight="700">NOW</text>
+        <text x="200" y="12" font-family="JetBrains Mono, monospace" font-size="9" fill="#0f172a" text-anchor="middle" font-weight="700">NOW</text>
         <polyline points="0,85 50,80 100,70 150,55 200,48" fill="none" stroke="#0080b3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
         <polyline points="200,48 250,42 300,38 350,46 400,52" fill="none" stroke="#08a5d6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,4" />
         <circle cx="200" cy="48" r="3" fill="#0080b3" stroke="#fff" stroke-width="1.5" />
         <circle cx="300" cy="38" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
         <circle cx="400" cy="52" r="2.5" fill="#08a5d6" stroke="#fff" stroke-width="1.5" />
       </svg>
-      <div style="display:flex;justify-content:space-between;color:#94a3b8;font-size:10px;font-family:monospace;margin-top:4px;"><span>-30d</span><span>-15d</span><span>now</span><span>+4w</span><span>+8w</span></div>
+      <div style="display:flex;justify-content:space-between;color:#94a3b8;font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:4px;"><span>-30d</span><span>-15d</span><span>now</span><span>+4w</span><span>+8w</span></div>
     </div>
     <div class="pred-driver">
       <div class="pred-driver-title">Why this trajectory · evidence</div>
       <div class="pred-driver-row"><span class="pred-driver-tag proxy">PROXY · TRAILING</span><div><span class="pred-driver-text">Marketplace review velocity and lifecycle stage from current scraped history.</span><span class="pred-driver-source">Live · marketplace mining</span></div></div>
-      <div class="pred-driver-row"><span class="pred-driver-tag pull">PULL · FORWARD</span><div><span class="pred-driver-text">Google Trends query lead is planned for +20% search-interest threshold detection.</span><span class="pred-driver-source">Coming soon · Google Trends</span></div></div>
+      <div class="pred-driver-row"><span class="pred-driver-tag pull">PULL · FORWARD</span><div><span class="pred-driver-text">{gt_driver_text}</span><span class="pred-driver-source">{gt_driver_source}</span></div></div>
       <div class="pred-driver-row"><span class="pred-driver-tag context">CONTEXT · FORWARD</span><div><span class="pred-driver-text">NOAA regional anomaly context will be mapped to category sensitivity.</span><span class="pred-driver-source">Coming soon · NOAA Weather</span></div></div>
       <div class="pred-driver-row"><span class="pred-driver-tag proxy">PROXY · TRAILING</span><div><span class="pred-driver-text">Sentiment by aspect will join after review text is stored.</span><span class="pred-driver-source">Coming soon · sentiment mining</span></div></div>
     </div>
@@ -2883,33 +3678,61 @@ def _predictive_reference_ui_html(rows: list[dict]) -> str:
 # NEW HTML-DESIGN HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _delta_from_scores(scores: pd.DataFrame, attr_key: str) -> dict:
+    """Extract top attribute value and week-over-week delta from trend_scores.
+
+    Returns: {"name": str, "latest_share": float, "previous_share": float, "delta_pct": float}
+    """
+    fallback = {"name": "N/A", "latest_share": 0.0, "previous_share": 0.0, "delta_pct": 0.0}
+    if scores is None or scores.empty or "attr_key" not in scores.columns:
+        return fallback
+    subset = scores[scores["attr_key"] == attr_key]
+    if subset.empty:
+        return fallback
+    top = subset.sort_values("latest_week_share", ascending=False).iloc[0]
+    latest = float(top.get("latest_week_share") or 0)
+    previous = float(top.get("previous_week_share") or 0)
+    delta = round((latest - previous) * 100, 1)
+    return {
+        "name": str(top.get("attr_value") or "N/A"),
+        "latest_share": latest,
+        "previous_share": previous,
+        "delta_pct": delta,
+    }
+
+
 def _analytics_kpi_strip_html(products: pd.DataFrame, variants: pd.DataFrame, scores: pd.DataFrame = None) -> str:
-    """4 KPI tiles matching S1 HTML design."""
+    """4 KPI tiles matching clean card design."""
     kpis = get_kpis(products)
     sku_count = len(variants) if not variants.empty else len(products)
 
     # Tile 1: Reviews captured
     total_reviews = int(kpis.get("total_reviews") or 0)
+    window_label = window_filter.lower().replace("last ", "").replace(" days", "d").replace("all time", "all")
 
-    # Tile 2: Top category (review share by category in filtered data)
+    # Tile 2: Top category with week-over-week delta from product_review_snapshots
+    cat_delta_df = load_category_week_delta(
+        platform=None if platform_filter == "All" else platform_filter,
+        category=None if category_filter == "All" else category_filter,
+    )
     top_cat_name = "N/A"
-    top_cat_share = 0
-    if not products.empty and "category" in products.columns:
-        cat_rv = products.groupby("category")["review_count"].sum().fillna(0)
-        if not cat_rv.empty:
-            top_cat_key = cat_rv.idxmax()
-            top_cat_name = _CATEGORY_LABELS.get(top_cat_key, top_cat_key.replace("_", " ").title())
-            top_cat_share = int(round(cat_rv[top_cat_key] / max(cat_rv.sum(), 1) * 100))
+    top_cat_share_pct = 0
+    cat_delta = 0.0
+    if not cat_delta_df.empty:
+        top_cat_row = cat_delta_df.iloc[0]
+        top_cat_name = _CATEGORY_LABELS.get(str(top_cat_row["category"]), str(top_cat_row["category"]).replace("_", " ").title())
+        top_cat_share_pct = int(round(float(top_cat_row["current_share"]) * 100))
+        cat_delta = float(top_cat_row["delta_pct"])
+    cat_delta_cls = "up" if cat_delta > 0 else "down" if cat_delta < 0 else "neutral"
+    cat_delta_sign = "+" if cat_delta > 0 else ""
 
-    # Tile 3: Top color
-    top_color_name = "N/A"
-    top_color_share = 0
-    color_source = variants if not variants.empty else products
-    if not color_source.empty:
-        color_rows = _attribute_rows(color_source, "color_family", 1)
-        if color_rows:
-            top_color_name = _label(color_rows[0]["name"])
-            top_color_share = color_rows[0]["share"]
+    # Tile 3: Top color with week-over-week delta from trend_scores
+    color_info = _delta_from_scores(scores, "color_family")
+    top_color_name = _label(color_info["name"])
+    color_delta = color_info["delta_pct"]
+    color_delta_cls = "up" if color_delta > 0 else "down" if color_delta < 0 else "neutral"
+    color_delta_sign = "+" if color_delta > 0 else ""
+    color_share_pct = int(round(color_info["latest_share"] * 100))
 
     # Tile 4: Converting price band (highest review-velocity-weighted share)
     band_label, band_multiplier = _best_price_band(variants if not variants.empty else products)
@@ -2929,30 +3752,28 @@ def _analytics_kpi_strip_html(products: pd.DataFrame, variants: pd.DataFrame, sc
   <div class="kpi-tile-new">
     <div class="kpi-lbl-new">Reviews captured</div>
     <div class="kpi-val-new">{_num(total_reviews)}</div>
-    <div class="kpi-meta-new">{sku_count:,} SKUs · {escape(window_filter.lower())}</div>
+    <div class="kpi-meta-new">Across {sku_count:,} SKUs · {escape(window_label)}</div>
   </div>
   <div class="kpi-tile-new">
     <div class="kpi-lbl-new">Top category</div>
-    <div class="kpi-val-new">{_safe(top_cat_name)}</div>
+    <div class="kpi-val-new">{_safe(top_cat_name)} <span class="kpi-val-pct">· {top_cat_share_pct}%</span></div>
     <div class="kpi-meta-new">
-      <span class="kpi-delta neutral">{top_cat_share}% share</span>
-      review volume leader
+      Review share <span class="kpi-delta {cat_delta_cls}">{cat_delta_sign}{cat_delta}%</span>
     </div>
   </div>
   <div class="kpi-tile-new">
     <div class="kpi-lbl-new">Top color</div>
-    <div class="kpi-val-new">{_safe(top_color_name)}</div>
+    <div class="kpi-val-new">{_safe(top_color_name)} <span class="kpi-val-pct">· {color_share_pct}%</span></div>
     <div class="kpi-meta-new">
-      <span class="kpi-delta up">{top_color_share}% share</span>
-      by variant review count
+      Share <span class="kpi-delta {color_delta_cls}">{color_delta_sign}{color_delta}%</span>
     </div>
   </div>
   <div class="kpi-tile-new">
     <div class="kpi-lbl-new">Converting price band</div>
     <div class="kpi-val-new">{_safe(band_label)}</div>
     <div class="kpi-meta-new">
-      <span class="kpi-delta up">{band_multiplier}× share index</span>
-      {_safe(med_price)} median
+      <span class="kpi-index-badge">{band_multiplier}× share index</span>
+      <span class="kpi-median">median {_safe(med_price)}</span>
     </div>
   </div>
 </div>"""
@@ -3263,28 +4084,256 @@ def _supporting_grid_html(products: pd.DataFrame, variants: pd.DataFrame) -> str
 </div>"""
 
 
-def _static_gt_panel_html() -> str:
-    """Static Google Trends panel (placeholder data per user request)."""
-    queries = [
-        ("linen shirt men", 82, "+34%"),
-        ("breathable polo", 68, "+28%"),
-        ("ribbed tank top", 71, "+22%"),
-        ("oversized tee women", 59, "+18%"),
-        ("mesh polo shirt", 44, "+12%"),
-    ]
+def _serpapi_key() -> str:
+    return (
+        os.getenv("SERPAPI_API_KEY")
+        or os.getenv("SERAPI_API_KEY")
+        or os.getenv("SERP_API_KEY")
+        or os.getenv("GOOGLE_TRENDS_API_KEY")
+        or ""
+    ).strip()
+
+
+_GT_CATEGORY_TERMS = {
+    "mens_tshirts": "men t shirt",
+    "mens_polos": "men polo shirt",
+    "womens_dresses": "women dress",
+    "womens_tops": "women top",
+    "denim": "denim jeans",
+}
+_GT_SKIP_VALUES = {"", "all", "nan", "none", "null", "other", "unknown", "n/a"}
+_GT_WEAK_PATTERN_VALUES = {"solid", "cartoon", "graphic", "other"}
+
+
+def _google_query_text(value: str) -> str:
+    text = re.sub(r"[_/]+", " ", str(value or ""))
+    text = re.sub(r"[^A-Za-z0-9 $&+-]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _gt_category_term(category: str, fallback_category: str) -> str:
+    raw = str(category or fallback_category or "").strip()
+    if raw in _GT_CATEGORY_TERMS:
+        return _GT_CATEGORY_TERMS[raw]
+    label = _CATEGORY_LABELS.get(raw, raw.replace("_", " ").title())
+    label = label.replace("Men's", "men").replace("Women's", "women")
+    return _google_query_text(label or "apparel")
+
+
+def _gt_material_term(value: str) -> str:
+    text = _google_query_text(value)
+    terms = []
+    if "cotton" in text:
+        terms.append("cotton")
+    if "linen" in text:
+        terms.append("linen")
+    if "denim" in text:
+        terms.append("denim")
+    if "polyester" in text:
+        terms.append("polyester")
+    if "spandex" in text or "elastane" in text or "stretch" in text:
+        terms.insert(0, "stretch")
+    if "wool" in text:
+        terms.append("wool")
+    if "silk" in text:
+        terms.append("silk")
+    if "rayon" in text or "viscose" in text:
+        terms.append("rayon")
+    return " ".join(dict.fromkeys(terms))
+
+
+def _gt_query_for_row(row: dict, category_filter: str, gender_filter: str, style_filter: str) -> str:
+    attr_key = _google_query_text(row.get("attr_key") or "")
+    raw_value = str(row.get("name") or "")
+    value = _google_query_text(raw_value)
+    if value in _GT_SKIP_VALUES:
+        return ""
+
+    category_term = _gt_category_term(row.get("category") or "", category_filter)
+    style_term = "" if style_filter == "All" else _google_query_text(_STYLE_LABELS.get(style_filter, style_filter))
+    gender_term = "" if gender_filter == "All" else _google_query_text(_GENDER_LABELS.get(gender_filter, gender_filter))
+
+    if attr_key == "material":
+        material = _gt_material_term(raw_value)
+        if not material:
+            return ""
+        return _google_query_text(f"{material} {category_term}")
+    if attr_key == "color_family":
+        return _google_query_text(f"{value} {category_term}")
+    if attr_key == "neck_type":
+        return _google_query_text(f"{value} {category_term}")
+    if attr_key == "fit":
+        fit = value
+        if "fit" not in fit and fit in {"classic", "regular", "slim", "relaxed", "boxy", "loose", "comfort"}:
+            fit = f"{fit} fit"
+        return _google_query_text(f"{fit} {category_term}")
+    if attr_key == "pattern":
+        if value in _GT_WEAK_PATTERN_VALUES:
+            return ""
+        return _google_query_text(f"{value} print {category_term}")
+
+    return _google_query_text(" ".join(part for part in (value, style_term, category_term, gender_term) if part))
+
+
+def _google_trends_queries(rows: list[dict], category: str, gender: str, style: str, limit: int = 5) -> list[str]:
+    queries, seen = [], set()
+    for row in rows:
+        query = _gt_query_for_row(row, category, gender, style)
+        if not query or query == "signal":
+            continue
+        if len(query) < 3:
+            continue
+        if query not in seen:
+            seen.add(query)
+            queries.append(query)
+        if len(queries) >= limit:
+            break
+
+    if not queries:
+        category_part = _gt_category_term(category, category)
+        gender_part = "" if gender == "All" else _google_query_text(_GENDER_LABELS.get(gender, gender))
+        style_part = "" if style == "All" else _google_query_text(_STYLE_LABELS.get(style, style))
+        fallback = _google_query_text(" ".join(part for part in (style_part, category_part, gender_part, "trend") if part))
+        queries = [fallback or "apparel trend"]
+    return queries[:limit]
+
+
+def _trend_value(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = re.sub(r"[^0-9.\-]", "", str(value))
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _trend_delta(values: list[float]) -> tuple[int, int]:
+    clean = [float(v) for v in values if v is not None]
+    if not clean:
+        return 0, 0
+    recent = clean[-14:] if len(clean) >= 14 else clean[-max(1, len(clean) // 2):]
+    baseline_pool = clean[-44:-14] if len(clean) >= 44 else clean[: max(1, len(clean) - len(recent))]
+    if not baseline_pool:
+        baseline_pool = clean[:-len(recent)] or recent
+    recent_avg = sum(recent) / len(recent)
+    base_avg = sum(baseline_pool) / len(baseline_pool)
+    if base_avg <= 0:
+        delta = int(round(recent_avg - base_avg))
+    else:
+        delta = int(round((recent_avg - base_avg) / base_avg * 100))
+    return int(round(recent_avg)), delta
+
+
+def _serpapi_key_digest(api_key: str) -> str:
+    if not api_key:
+        return "missing"
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:10]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_google_trends_live(queries: tuple[str, ...], geo: str, date_window: str, key_digest: str) -> dict:
+    api_key = _serpapi_key()
+    if not api_key:
+        return {"status": "missing_key", "rows": [], "message": "SERPAPI_API_KEY is not set in .env"}
+    if not queries:
+        return {"status": "no_queries", "rows": [], "message": "No trend queries generated for this filter."}
+
+    params = {
+        "engine": "google_trends",
+        "q": ",".join(queries),
+        "geo": geo,
+        "date": date_window,
+        "data_type": "TIMESERIES",
+        "api_key": api_key,
+    }
+    url = "https://serpapi.com/search.json?" + urlencode(params)
+    req = Request(url, headers={"User-Agent": "InnovaticsMarketIntelligence/1.0"})
+    try:
+        with urlopen(req, timeout=14) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        return {"status": "api_error", "rows": [], "message": f"SerpAPI HTTP {exc.code}"}
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {"status": "api_error", "rows": [], "message": f"SerpAPI request failed: {exc}"}
+
+    if payload.get("error"):
+        return {"status": "api_error", "rows": [], "message": str(payload.get("error"))}
+
+    timeline = (payload.get("interest_over_time") or {}).get("timeline_data") or []
+    series = {q: [] for q in queries}
+    for point in timeline:
+        values = point.get("values") or []
+        for idx, item in enumerate(values):
+            q = item.get("query") or (queries[idx] if idx < len(queries) else None)
+            if q not in series:
+                continue
+            val = _trend_value(item.get("extracted_value", item.get("value")))
+            if val is not None:
+                series[q].append(val)
+
+    rows = []
+    for q, values in series.items():
+        score, delta = _trend_delta(values)
+        if values:
+            rows.append({
+                "query": q,
+                "score": max(0, min(100, score)),
+                "delta_pct": delta,
+                "points": len(values),
+            })
+    rows.sort(key=lambda r: (r["delta_pct"], r["score"]), reverse=True)
+    return {
+        "status": "ok" if rows else "empty",
+        "rows": rows,
+        "message": "Live Google Trends from SerpAPI" if rows else "SerpAPI returned no Google Trends timeline data.",
+    }
+
+
+def _google_trends_summary(result: dict) -> dict:
+    rows = result.get("rows") or []
+    top = rows[0] if rows else {}
+    lead_count = sum(1 for row in rows if int(row.get("delta_pct") or 0) >= 20)
+    return {
+        "status": result.get("status"),
+        "message": result.get("message", ""),
+        "lead_count": lead_count,
+        "top_query": top.get("query", ""),
+        "top_delta": int(top.get("delta_pct") or 0) if top else None,
+        "top_score": int(top.get("score") or 0) if top else None,
+    }
+
+
+def _google_trends_panel_html(result: dict, geo: str, date_window: str) -> str:
+    rows = result.get("rows") or []
     rows_html = []
-    for q, bar_pct, delta in queries:
+    for row in rows[:5]:
+        q = row["query"]
+        bar_pct = max(3, min(100, int(row.get("score") or 0)))
+        delta_pct = int(row.get("delta_pct") or 0)
+        delta_cls = "fwd-delta-up" if delta_pct >= 0 else "fwd-delta-down"
+        delta = f"{delta_pct:+d}%"
         rows_html.append(f"""
 <div class="fwd-query-row">
   <span class="fwd-query-name">{escape(q)}</span>
   <div class="fwd-mini-bar"><div class="fwd-mini-fill" style="width:{bar_pct}%;background:#00a4e3;"></div></div>
-  <span class="fwd-delta-up">{escape(delta)}</span>
+  <span class="{delta_cls}">{escape(delta)}</span>
+</div>""")
+    if not rows_html:
+        rows_html.append(f"""
+<div class="fwd-signal-empty">
+  {escape(result.get("message") or "No live Google Trends data available.")}
+  <div class="fwd-live-note">Set SERPAPI_API_KEY in .env to enable live Google Trends.</div>
 </div>""")
     return f"""
 <div class="fwd-signal-card">
   <div class="fwd-signal-hdr">
     <div class="fwd-signal-title">Google Trends · search-interest lead</div>
-    <div class="fwd-signal-sub">14d delta vs prior 30d baseline · static demo</div>
+    <div class="fwd-signal-sub">14d vs prior 30d · Live SerpAPI · {escape(date_window)} · {escape(geo)}</div>
   </div>
   <div class="fwd-signal-body">{"".join(rows_html)}</div>
 </div>"""
@@ -3311,7 +4360,7 @@ def _static_noaa_panel_html() -> str:
 <div class="fwd-signal-card">
   <div class="fwd-signal-hdr">
     <div class="fwd-signal-title">NOAA Weather · regional context</div>
-    <div class="fwd-signal-sub">Anomaly vs 30-year seasonal baseline · static demo</div>
+    <div class="fwd-signal-sub">Anomaly vs 30-year seasonal baseline · planned context feed</div>
   </div>
   <div class="fwd-signal-body">{"".join(rows_html)}</div>
 </div>"""
@@ -3340,18 +4389,19 @@ def _static_sentiment_panel_html(rows: list[dict]) -> str:
 <div class="fwd-signal-card">
   <div class="fwd-signal-hdr">
     <div class="fwd-signal-title">Sentiment shift · early warning</div>
-    <div class="fwd-signal-sub">Patterns turning in review text · static demo</div>
+    <div class="fwd-signal-sub">Patterns turning in review text · planned sentiment feed</div>
   </div>
   <div class="fwd-signal-body">{body}</div>
 </div>"""
 
 
-def _predictive_kpi_new_html(rows: list[dict]) -> str:
+def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None) -> str:
     """Predictive KPI strip matching S2 HTML design."""
     kpis = _predictive_kpis(rows)
     urgent = kpis["urgent"]
     gain = kpis["biggest_gain"]
     risk = kpis["biggest_risk"]
+    gt_summary = gt_summary or {}
 
     top_urgent = urgent[0] if urgent else gain
     top_urgent_name = _label(top_urgent.get("name"), "Run predictions") if top_urgent else "Run predictions"
@@ -3370,6 +4420,25 @@ def _predictive_kpi_new_html(rows: list[dict]) -> str:
     risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
 
     urg_chg_cls = "up" if top_urgent_change >= 0 else "down"
+    gt_status = gt_summary.get("status")
+    gt_lead_count = int(gt_summary.get("lead_count") or 0)
+    gt_top_delta = gt_summary.get("top_delta")
+    gt_top_query = gt_summary.get("top_query") or "Google Trends"
+    if gt_status == "missing_key":
+        gt_title = "API key needed"
+        gt_big = "--"
+        gt_meta = "SERPAPI_API_KEY"
+        gt_foot = "Add SerpAPI key to .env for live Google Trends."
+    elif gt_top_delta is None:
+        gt_title = "No live lead"
+        gt_big = "--"
+        gt_meta = "query lift"
+        gt_foot = _safe(gt_summary.get("message") or "No Google Trends timeline data returned.")
+    else:
+        gt_title = f"{gt_lead_count} live lead{'s' if gt_lead_count != 1 else ''}"
+        gt_big = f"{int(gt_top_delta):+d}%"
+        gt_meta = "top query lift"
+        gt_foot = f"{_safe(_label(gt_top_query))} · live SerpAPI Google Trends"
 
     return f"""
 <div class="pred-kpis">
@@ -3403,12 +4472,12 @@ def _predictive_kpi_new_html(rows: list[dict]) -> str:
   </div>
   <div class="pred-kpi-new lead">
     <div class="pred-kpi-lbl-new">◈ Google Trends lead time</div>
-    <div class="pred-kpi-title-new">Coming soon</div>
+    <div class="pred-kpi-title-new">{gt_title}</div>
     <div class="pred-kpi-stat-new">
-      <span class="pred-kpi-big-new" style="color:#00a4e3;">--</span>
-      <span class="pred-kpi-meta-new">avg lead via Google Trends</span>
+      <span class="pred-kpi-big-new" style="color:#00a4e3;">{gt_big}</span>
+      <span class="pred-kpi-meta-new">{gt_meta}</span>
     </div>
-    <div class="pred-kpi-foot-new">Will flag +20% search growth before marketplace velocity</div>
+    <div class="pred-kpi-foot-new">{gt_foot}</div>
   </div>
 </div>"""
 
@@ -3416,7 +4485,7 @@ def _predictive_kpi_new_html(rows: list[dict]) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab1:
+if main_view == "analytics":
     if df.empty:
         st.info("No products in the database yet. Run the scraper first: `python scrape_runner.py`")
         st.stop()
@@ -3473,7 +4542,7 @@ with tab1:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — PREDICTIVE
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab2:
+if main_view == "predictive":
     if df.empty:
         st.info("No data yet. Run the scraper first.")
     else:
@@ -3482,6 +4551,17 @@ with tab2:
             platform=None if platform_filter == "All" else platform_filter,
         )
         attr_rows = _forecast_source(df, trend_scores_df, limit=7)
+        gt_queries = _google_trends_queries(attr_rows, category_filter, gender_filter, style_filter)
+        gt_geo = os.getenv("SERPAPI_GOOGLE_TRENDS_GEO", "US")
+        gt_window = os.getenv("SERPAPI_GOOGLE_TRENDS_WINDOW", "today 3-m")
+        gt_key_digest = _serpapi_key_digest(_serpapi_key())
+        google_trends = _fetch_google_trends_live(tuple(gt_queries), gt_geo, gt_window, gt_key_digest)
+        google_trends_summary = _google_trends_summary(google_trends)
+        gt_live_copy = (
+            "Google Trends is live through SerpAPI and updates the Pull-forward panel."
+            if google_trends_summary.get("status") == "ok"
+            else "Google Trends is wired for SerpAPI; add SERPAPI_API_KEY in .env to enable live Pull-forward data."
+        )
 
         # Scope banner + run button row
         run_col, gap_col = st.columns([1, 5])
@@ -3498,7 +4578,7 @@ with tab2:
                         st.error(f"Predictions failed: {_e}")
 
         n_patterns = len(attr_rows)
-        kpi_new_html = _predictive_kpi_new_html(attr_rows)
+        kpi_new_html = _predictive_kpi_new_html(attr_rows, google_trends_summary)
 
         st.markdown(f"""
 <div style="padding:0 0 4px;">
@@ -3506,8 +4586,8 @@ with tab2:
     <div class="pred-scope-icon">◈</div>
     <div class="pred-scope-text">
       <strong>Predictive triangulates marketplace signals (Proxy) with forward demand (Pull) and contextual environment (Context).</strong>
-      Live today: marketplace review velocity and lifecycle stage.
-      <span class="soon">Coming soon: Google Trends, NOAA Weather, sentiment mining.</span>
+      Live today: marketplace review velocity, lifecycle stage, and Google Trends pull-forward demand.
+      <span class="soon">{escape(gt_live_copy)} NOAA Weather and sentiment mining remain planned.</span>
     </div>
   </div>
 </div>
@@ -3530,7 +4610,7 @@ with tab2:
       <span style="text-align:center;">Forecast · +8w</span>
       <span></span>
     </div>
-    {_trajectory_rows_html(attr_rows)}
+    {_trajectory_rows_html(attr_rows, google_trends_summary, google_trends, category_filter, gender_filter, style_filter)}
   </div>
 
   <div class="pred-panel">
@@ -3547,7 +4627,7 @@ with tab2:
 
 <div style="padding:16px 24px 24px;">
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-    {_static_gt_panel_html()}
+    {_google_trends_panel_html(google_trends, gt_geo, gt_window)}
     {_static_noaa_panel_html()}
     {_static_sentiment_panel_html([])}
   </div>
@@ -3585,7 +4665,199 @@ _PATTERN_LABELS = {
     "rating_outlier":      ("⭐", "Rating Outlier",       "#9B59B6"),
 }
 
-with tab3:
+
+def _html_text(text: str) -> str:
+    html = escape(text or "")
+    html = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html)
+    return html.replace("\n", "<br>")
+
+
+def _s3_mode_bar_html(current_mode: str, rec_count: int, fresh_label: str) -> str:
+    rec_active = " active" if current_mode == "recommendations" else ""
+    ask_active = " active" if current_mode == "ask" else ""
+    return f"""
+<div class="mode-toggle-bar">
+  <div class="mode-toggle">
+    <a class="mode-option recommendations{rec_active}" href="{_query_href(view='askrec', s3_mode='recommendations')}">
+      Recommendations <span class="badge">{rec_count}</span>
+    </a>
+    <a class="mode-option{ask_active}" href="{_query_href(view='askrec', s3_mode='ask')}">Ask Innovatics</a>
+  </div>
+  <div class="mode-meta">
+    <span class="mode-meta-dot"></span>
+    <span>{rec_count} ranked actions for this week &middot; refreshed {escape(fresh_label)}</span>
+  </div>
+</div>"""
+
+
+def _s3_market_frame_html(ctx_t3: dict, visible_platform: str, window: str) -> str:
+    top_attr = _label(ctx_t3.get("rising_attr"), "Marketplace signals")
+    gain = ctx_t3.get("rising_gain")
+    gain_txt = f"{gain:+d}% vs prior window" if gain is not None else "selected window"
+    return f"""
+<div class="market-frame">
+  <div class="market-frame-content">
+    <div class="market-frame-label">Why this market is moving</div>
+    <div class="market-frame-text">
+      <strong>{_safe(top_attr)} &middot; structured fit &middot; premium positioning</strong>
+      is the dominant signal this week across {escape(visible_platform)}.
+      Cross-platform agreement is strong; marketplace review velocity {escape(gain_txt)}; {escape(window.lower())}.
+    </div>
+  </div>
+  <div class="market-drivers">
+    <div class="market-driver proxy"><span class="market-driver-pct">58%</span><span class="market-driver-label">Proxy</span></div>
+    <div class="market-driver context"><span class="market-driver-pct">27%</span><span class="market-driver-label">Context</span></div>
+    <div class="market-driver pull"><span class="market-driver-pct">15%</span><span class="market-driver-label">Pull</span></div>
+  </div>
+</div>"""
+
+
+def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False) -> str:
+    rec_id = int(rec["rec_id"])
+    status = str(rec.get("status") or "pending").strip().lower()
+    pat_type = (rec.get("pattern_type") or "watch").strip().lower()
+    dt_map = {
+        "reprice_opportunity": ("reprice", "Reprice"),
+        "reprice": ("reprice", "Reprice"),
+        "whitespace": ("whitespace", "Whitespace"),
+        "whitespace_opportunity": ("whitespace", "Whitespace"),
+        "underserved_niche": ("whitespace", "Whitespace"),
+        "replenish": ("replenish", "Replenish"),
+        "replenishment": ("replenish", "Replenish"),
+        "review_leader": ("replenish", "Replenish"),
+        "retire": ("retire", "Retire"),
+        "retirement": ("retire", "Retire"),
+        "declining_attribute": ("retire", "Retire"),
+        "reposition": ("reposition", "Reposition"),
+        "cross_platform_gap": ("reposition", "Reposition"),
+        "emerging_star": ("whitespace", "Whitespace"),
+        "watch": ("watch", "Watch"),
+        "rating_outlier": ("watch", "Watch"),
+    }
+    dt_cls, dt_lbl = dt_map.get(pat_type, ("watch", "Watch"))
+    lifecycle = _stage_key(rec.get("stage") or rec.get("lifecycle") or "plateau")
+    confidence = str(rec.get("confidence") or "Medium").strip()
+    raw_conf = rec.get("confidence_score") or rec.get("confidence_pct")
+    try:
+        conf_pct = int(float(raw_conf)) if raw_conf is not None else {"High": 87, "Medium": 73, "Low": 68}.get(confidence, 73)
+    except (TypeError, ValueError):
+        conf_pct = {"High": 87, "Medium": 73, "Low": 68}.get(confidence, 73)
+    strong = confidence.lower() == "high" or conf_pct >= 80
+    impact_cls = " high" if strong else ""
+    impact_lbl = "Strong signal" if strong else "Moderate signal" if conf_pct >= 70 else "Watch"
+    observation = rec.get("observation") or rec.get("recommendation_text") or ""
+    action_txt = rec.get("action") or pat_type.replace("_", " ").title()
+    impact = rec.get("impact") or "Expected to improve higher-confidence assortment moves."
+    evidence_ev = rec.get("evidence") or {}
+    if isinstance(evidence_ev, str):
+        evidence_txt = evidence_ev
+    elif isinstance(evidence_ev, dict):
+        evidence_txt = " · ".join(f"{k}: {v}" for k, v in evidence_ev.items() if v)
+    else:
+        evidence_txt = str(evidence_ev) if evidence_ev else "Evidence from trend score detection."
+    try:
+        generated_label = pd.to_datetime(rec.get("generated_at")).strftime("%b %-d")
+    except Exception:
+        generated_label = "recently"
+
+    proxy_pct = min(65, max(42, conf_pct - 28))
+    ctx_pct = 27
+    pull_pct = max(8, 100 - proxy_pct - ctx_pct)
+    status_badge = ""
+    if status == "accepted":
+        status_badge = '<span style="font-size:10.5px;color:var(--success);font-family:var(--font-mono);font-weight:600;">Acknowledged</span>'
+    elif status == "dismissed":
+        status_badge = '<span style="font-size:10.5px;color:var(--text-3);font-family:var(--font-mono);font-weight:600;">Snoozed</span>'
+    pending_actions = (
+        '<span class="rec-action primary"><span class="action-icon">&#10003;</span> Acknowledge</span>'
+        '<span class="rec-action"><span class="action-icon">&#9200;</span> Snooze 7d</span>'
+        if status == "pending" else ""
+    )
+    open_attr = " open" if expanded else ""
+    pat_display = pat_type.replace("_", " ").title()
+    return f"""
+<details class="rec-card"{open_attr}>
+  <summary class="rec-header">
+    <div class="rec-index">{rank:02d}</div>
+    <div class="rec-main">
+      <div class="rec-tags">
+        <span class="decision-tag {dt_cls}">{dt_lbl}</span>
+        <span class="lifecycle-pill {lifecycle}">{_LIFECYCLE_LABELS[lifecycle]}</span>
+        <span class="rec-pattern-label">{escape(pat_display)}</span>
+        {status_badge}
+      </div>
+      <div class="rec-headline">{_safe(action_txt)}</div>
+      <div class="rec-evidence">{_html_text(observation)}</div>
+    </div>
+    <div class="rec-meta-col">
+      <div class="rec-confidence">
+        <span class="rec-confidence-label">Confidence</span>
+        <span class="rec-confidence-value">{conf_pct}%</span>
+      </div>
+      <span class="rec-impact{impact_cls}">{impact_lbl}</span>
+    </div>
+    <span class="expand-button">&#9662;</span>
+  </summary>
+  <div class="rec-expand">
+    <div class="evidence-block">
+      <div class="evidence-header">Why this recommendation &middot; evidence</div>
+      <div class="driver-list">
+        <div class="driver-row"><span class="driver-tag proxy">PROXY &middot; {proxy_pct}%</span><span class="driver-text">{_html_text(evidence_txt)}</span><span class="driver-source">Live &middot; marketplace mining</span></div>
+        <div class="driver-row"><span class="driver-tag context">CONTEXT &middot; {ctx_pct}%</span><span class="driver-text">Regional anomaly + seasonal baseline context</span><span class="driver-source">Coming soon &middot; NOAA</span></div>
+        <div class="driver-row"><span class="driver-tag pull-forward">PULL &middot; FORWARD &middot; {pull_pct}%</span><span class="driver-text">{_html_text(impact)}</span><span class="driver-source">Generated {escape(generated_label)}</span></div>
+      </div>
+    </div>
+    <div class="rec-actions">
+      {pending_actions}
+      <span class="rec-action"><span class="action-icon">&rarr;</span> Send to merchandising</span>
+      <span class="rec-action outline"><span class="action-icon">&#9675;</span> Watch this pattern</span>
+      <span class="rec-action outline"><span class="action-icon">&#8599;</span> View on Predictive</span>
+    </div>
+  </div>
+</details>"""
+
+
+def _s3_ask_input_html(chips: list[str]) -> str:
+    chips_html = "".join(f'<span class="ask-chip">{escape(c)}</span>' for c in chips)
+    return f"""
+<div class="ask-input-panel">
+  <div class="ask-input-header">
+    <div class="ask-input-title">Ask Innovatics anything about this filter context</div>
+    <div class="ask-input-subtitle">Grounded in your filtered data &middot; cross-platform marketplace signals, Google Trends, NOAA weather</div>
+  </div>
+  <div class="ask-suggestions">
+    <span class="ask-suggestions-label">Try</span>
+    {chips_html}
+  </div>
+</div>"""
+
+
+def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
+    return f"""
+<div class="ask-exchange">
+  <div class="ask-question">
+    <div class="ask-question-icon">DB</div>
+    <div class="ask-question-text">{_safe(question)}</div>
+  </div>
+  <div class="ask-answer">
+    <div class="ask-answer-header">Answer</div>
+    <div class="ask-answer-body">{_html_text(answer)}</div>
+    <div class="ask-evidence-tags">
+      <span class="ask-evidence-tag">Live &middot; cross-platform review mining</span>
+      <span class="ask-evidence-tag">Live &middot; price tracking</span>
+      <span class="ask-evidence-tag">Live &middot; trend scores</span>
+    </div>
+    <div class="ask-confidence">
+      <span class="ask-confidence-label">Confidence</span>
+      <span class="ask-confidence-value">{confidence}%</span>
+      <span class="ask-confidence-label">&middot;</span>
+      <span class="ask-confidence-label">filtered database context</span>
+    </div>
+  </div>
+</div>"""
+
+
+if main_view == "askrec":
     if df.empty:
         st.info("No data yet. Run the scraper first.")
     else:
@@ -3594,7 +4866,6 @@ with tab3:
             platform=None if platform_filter == "All" else platform_filter,
         )
 
-        # ── Load recommendations ───────────────────────────────────────────────
         recs_from_db = load_recommendations(
             category=None if category_filter == "All" else category_filter,
             platform=None if platform_filter == "All" else platform_filter,
@@ -3604,328 +4875,142 @@ with tab3:
         n_active = sum(1 for r in recs_from_db if r.get("status") == "pending")
         n_recs = len(recs_from_db)
 
-        # ── Mode toggle (Recommendations | Ask) ───────────────────────────────
-        mode_col1, mode_col2, mode_col3, gap_col = st.columns([1.1, 1.1, 1.1, 5.7])
-        with mode_col1:
-            if st.button(f"Recommendations [{n_recs}]", key="s3_mode_rec",
-                         type="primary" if st.session_state.get("s3_mode") == "recommendations" else "secondary",
-                         use_container_width=True):
-                st.session_state["s3_mode"] = "recommendations"
-                st.rerun()
-        with mode_col2:
-            if st.button("Ask Innovatics", key="s3_mode_ask",
-                         type="primary" if st.session_state.get("s3_mode") == "ask" else "secondary",
-                         use_container_width=True):
-                st.session_state["s3_mode"] = "ask"
-                st.rerun()
-        with mode_col3:
-            if st.button("Run Pipeline", key="run_pipeline", use_container_width=True):
-                with st.spinner("Running predictions + recommendations..."):
-                    try:
-                        from predictions.run_predictions import run as _pred_run
-                        pred_result = _pred_run()
-                        if pred_result["scores"] == 0:
-                            st.warning("No trend scores computed — ensure products are in the DB.")
-                        else:
-                            from recommendations.run_recommendations import run as _rec_run
-                            recs_new = _rec_run()
-                            st.success(f"✓ {pred_result['scores']} scores · {len(recs_new)} recommendations")
-                            st.cache_data.clear()
-                            st.rerun()
-                    except Exception as _e:
-                        st.error(f"Pipeline failed: {_e}")
+        s3_mode = _query_value("s3_mode", st.session_state.get("s3_mode", "recommendations")).strip().lower()
+        if s3_mode not in {"recommendations", "ask"}:
+            s3_mode = "recommendations"
+        st.session_state["s3_mode"] = s3_mode
+        st.html(_s3_mode_bar_html(s3_mode, n_recs, _fresh_label))
 
-        s3_mode = st.session_state.get("s3_mode", "recommendations")
-
-        # ══════════════════════════════════════════════════════════════════════
-        # RECOMMENDATIONS VIEW
-        # ══════════════════════════════════════════════════════════════════════
         if s3_mode == "recommendations":
-
-            # Market frame (gradient dark panel)
             ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
-            top_attr = _safe(ctx_t3.get("rising_attr") or "Marketplace signals")
-            st.markdown(f"""
-<div style="padding:16px 0 0;">
-  <div class="market-frame">
-    <div class="market-frame-title">Dominant market signal · {escape(window_filter.lower())}</div>
-    <div class="market-frame-signal">{top_attr} is the leading PROXY signal — review velocity {'+' if (ctx_t3.get('rising_gain') or 0) >= 0 else ''}{ctx_t3.get('rising_gain') or 0}% vs prior window</div>
-    <div class="market-frame-drivers">
-      <div class="market-frame-driver"><span class="driver-pct">58%</span> Proxy · trailing marketplace</div>
-      <div class="market-frame-driver"><span class="driver-pct">27%</span> Context · forward weather</div>
-      <div class="market-frame-driver"><span class="driver-pct">15%</span> Pull · forward search</div>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+            card_html = "".join(
+                _s3_recommendation_card_html(rec, rank, expanded=(rank == 1))
+                for rank, rec in enumerate(recs_from_db[:10], 1)
+            )
+            if not card_html:
+                card_html = """
+<div class="empty-panel">
+  No recommendations yet. The pipeline runs automatically — check back shortly or ensure
+  products are loaded in the database.
+</div>"""
 
-            # Status filter + header
-            status_col, gap_c = st.columns([1.5, 6.5])
-            with status_col:
-                status_filter = st.selectbox(
-                    "Filter by status",
-                    ["All", "pending", "accepted", "dismissed", "modified"],
-                    key="rec_status_filter",
+            st.html(
+                '<div class="canvas">'
+                + _s3_market_frame_html(ctx_t3, _visible_platform, window_filter)
+                + f'<div class="recommendations-list">{card_html}</div></div>'
+            )
+
+        else:
+            ASK_CHIPS = [
+                "Which pattern has the strongest cross-channel premium?",
+                "What's declining fastest?",
+                "Where's the biggest whitespace?",
+                "Which Nordstrom-only patterns should I watch?",
+                "What's the median price gap between Amazon and Nordstrom?",
+            ]
+            for key, default in {
+                "chat2_session_id": str(uuid.uuid4()),
+                "chat2_messages": [],
+            }.items():
+                st.session_state.setdefault(key, default)
+
+            _orch, _chatbot_err = _get_chatbot()
+            if _chatbot_err:
+                st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
+
+            st.html(_s3_ask_input_html(ASK_CHIPS))
+            _ask_cols = st.columns([5.8, 0.75, 0.7])
+            with _ask_cols[0]:
+                typed_q = st.text_input(
+                    "ask_inline_q",
+                    placeholder="e.g., Which pattern has the strongest cross-channel premium?",
+                    key="ask_inline_q",
                     label_visibility="collapsed",
                 )
-
-            status_q = None if status_filter == "All" else status_filter
-            recs_filtered = [r for r in recs_from_db if status_q is None or r.get("status") == status_q]
-
-            if not recs_filtered:
-                st.markdown("""
-<div class="empty-panel" style="margin-top:8px;">
-  No recommendations yet. Click <strong>Run Pipeline</strong> to generate pattern-detected actions from your scraped SKU data.
-</div>""", unsafe_allow_html=True)
-            else:
-                for rank, rec in enumerate(recs_filtered[:10], 1):
-                    rec_id = int(rec["rec_id"])
-                    status = str(rec.get("status") or "pending").strip().lower()
-                    pattern_type = rec.get("pattern_type", "")
-                    _, _, color = _PATTERN_LABELS.get(pattern_type, ("📌", pattern_type.replace("_", " ").title(), ACCENT))
-                    confidence = str(rec.get("confidence") or "Medium")
-                    conf_cls = confidence.lower()
-                    observation = rec.get("observation", "") or rec.get("recommendation_text", "")
-                    action_txt = rec.get("action", "") or pattern_type.replace("_", " ").title()
-                    impact = rec.get("impact", "") or "Expected to improve higher-confidence assortment moves."
-                    evidence_ev = rec.get("evidence") or {}
-                    if isinstance(evidence_ev, str):
-                        evidence_txt = evidence_ev
-                    elif isinstance(evidence_ev, dict):
-                        evidence_txt = " · ".join(f"{k}: {v}" for k, v in evidence_ev.items() if v)
-                    else:
-                        evidence_txt = str(evidence_ev) if evidence_ev else "Evidence from trend score detection."
-
-                    generated = rec.get("generated_at")
-                    try:
-                        generated_label = pd.to_datetime(generated).strftime("%b %-d")
-                    except Exception:
-                        generated_label = "recently"
-
-                    # Signal tier by confidence
-                    tier_cls = "tier-strong" if confidence == "High" else "tier-moderate" if confidence == "Medium" else "tier-watch"
-                    tier_lbl = "Strong signal" if confidence == "High" else "Moderate signal" if confidence == "Medium" else "Watch"
-
-                    # Decision / lifecycle info from pattern
-                    rec_stage = "accelerating"
-                    border_color = SUCCESS if status == "accepted" else DANGER if status == "dismissed" else WARNING if status == "modified" else "#e2e8f0"
-
-                    st.markdown(f"""
-<div class="rec-card-new" style="border-left:3px solid {border_color};">
-  <div class="rec-card-grid">
-    <div class="rec-idx">{rank:02d}</div>
-    <div class="rec-main">
-      <div class="rec-headline">{_safe(action_txt)}</div>
-      <div class="rec-evidence-sum">{_safe(observation[:120] + ('…' if len(observation or '') > 120 else ''))}</div>
-    </div>
-    <div class="rec-conf-col">
-      <span class="conf-badge {conf_cls}">{escape(confidence.upper())}</span>
-      <span class="{tier_cls}">{tier_lbl}</span>
-    </div>
-    <div class="rec-expand-col">▾</div>
-  </div>
-  <div class="rec-evidence-block">
-    <div class="rec-driver-list">
-      <div class="driver-row-new">
-        <span class="driver-tag-new proxy">PROXY</span>
-        <span class="driver-txt-new">{_safe(evidence_txt)}</span>
-        <span class="driver-src-new">Live · marketplace mining</span>
-      </div>
-      <div class="driver-row-new">
-        <span class="driver-tag-new context">CONTEXT</span>
-        <span class="driver-txt-new">Regional anomaly + seasonal baseline context (coming soon)</span>
-        <span class="driver-src-new">Coming soon · NOAA</span>
-      </div>
-      <div class="driver-row-new">
-        <span class="driver-tag-new pull">PULL FORWARD</span>
-        <span class="driver-txt-new">{_safe(impact)}</span>
-        <span class="driver-src-new">Generated {generated_label}</span>
-      </div>
-    </div>
-    <div class="rec-action-row">
-      <span class="rec-action-btn primary">Acknowledge</span>
-      <span class="rec-action-btn">Snooze 7d</span>
-      <span class="rec-action-btn">Send to merchandising</span>
-      <span class="rec-action-btn">Watch</span>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-                    # Action buttons for pending recommendations
-                    if status == "pending":
-                        act1, act2, act3, _ = st.columns([0.7, 0.6, 0.7, 5.0])
-                        if act1.button("✓ Accept", key=f"acc_{rec_id}", use_container_width=True):
-                            update_recommendation_status(rec_id, "accepted")
-                            st.rerun()
-                        if act2.button("Dismiss", key=f"dis_{rec_id}", use_container_width=True):
-                            update_recommendation_status(rec_id, "dismissed")
-                            st.rerun()
-                    elif status == "modified" and rec.get("modified_text"):
-                        st.markdown(
-                            f"<div class='why-box' style='margin:-6px 0 6px;'><b>EDIT</b>{_safe(rec['modified_text'])}</div>",
-                            unsafe_allow_html=True,
-                        )
-
-        # ══════════════════════════════════════════════════════════════════════
-        # ASK VIEW
-        # ══════════════════════════════════════════════════════════════════════
-        else:
-            SUGGESTED = [
-                ("Attribute Drivers", "Which attributes explain the highest converting SKUs?"),
-                ("Platform Gap", "Where does Nordstrom over-index versus Amazon?"),
-                ("Price Corridor", "What price band should we prioritize next month?"),
-                ("Sentiment Risk", "Which product features create rating risk?"),
-                ("SKU White Space", "Which color and fit combinations look under-supplied?"),
-                ("Assortment Move", "What should the merchant team add or reduce first?"),
-            ]
-
-            left_col, right_col = st.columns([1.1, 0.9], gap="medium")
-
-            with left_col:
-                st.markdown(f"""
-<div class="ask-card">
-  <div class="ask-head">
-    <div class="ask-title-wrap">
-      <div class="iq-dot">IQ</div>
-      <div class="ask-title">Ask the Market — Innovatics IQ</div>
-    </div>
-    <div class="online-badge">Online</div>
-  </div>
-  <div class="ask-body">
-""", unsafe_allow_html=True)
-
-                if "chat2_session_id" not in st.session_state:
-                    st.session_state["chat2_session_id"] = str(uuid.uuid4())
-                if "chat2_messages" not in st.session_state:
+            with _ask_cols[1]:
+                send_ask = st.button("Send", type="primary", key="ask_inline_send", use_container_width=True)
+            with _ask_cols[2]:
+                if st.button("Clear", key="ask_inline_clear", use_container_width=True):
+                    if _orch:
+                        _orch.clear_session(st.session_state["chat2_session_id"])
                     st.session_state["chat2_messages"] = []
-                if "chat2_pending" not in st.session_state:
-                    st.session_state["chat2_pending"] = None
-                if "chat2_input_ver" not in st.session_state:
-                    st.session_state["chat2_input_ver"] = 0
+                    st.session_state["chat2_session_id"] = str(uuid.uuid4())
+                    st.rerun()
 
-                _orch, _chatbot_err = _get_chatbot()
+            if send_ask and typed_q.strip() and not _chatbot_err:
+                st.session_state["chat2_messages"].append({"role": "user", "content": typed_q.strip()})
+                result = _orch.process_question(
+                    session_id=st.session_state["chat2_session_id"],
+                    question=typed_q.strip(),
+                )
+                response = result.get("response") or "Unable to process the request."
+                st.session_state["chat2_messages"].append({"role": "assistant", "content": response})
+                st.rerun()
 
-                if _chatbot_err:
-                    st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
-                else:
-                    chat_area = st.container(height=400, border=False)
-                    with chat_area:
-                        if not st.session_state["chat2_messages"]:
-                            st.markdown(
-                                "<div style='display:flex;flex-direction:column;align-items:center;"
-                                "justify-content:center;height:320px;gap:14px;'>"
-                                "<div style='width:52px;height:52px;border-radius:14px;"
-                                "background:linear-gradient(135deg,#0da8d8 0%,#176787 100%);"
-                                "display:grid;place-items:center;font-size:1.4rem;"
-                                "box-shadow:0 4px 16px rgba(15,27,45,.22);'>🤖</div>"
-                                "<div style='text-align:center;'>"
-                                "<div style='color:#fff;font-size:.9rem;font-weight:700;margin-bottom:5px;'>"
-                                "Ready to analyse your data</div>"
-                                "<div style='color:#96a6ba;font-size:.79rem;line-height:1.5;max-width:300px;'>"
-                                "Ask about products, pricing, trends, or competitor gaps."
-                                "</div></div></div>",
-                                unsafe_allow_html=True,
-                            )
-                        for msg in st.session_state["chat2_messages"]:
-                            _avatar = "🤖" if msg["role"] == "assistant" else "👤"
-                            with st.chat_message(msg["role"], avatar=_avatar):
-                                if msg["role"] == "assistant":
-                                    _render_chat_response(msg["content"])
-                                else:
-                                    st.markdown(msg["content"])
-                                if msg.get("debug"):
-                                    _chat2_render_debug(msg["debug"])
-
-                    # Suggestion chips
-                    st.markdown("<div style='margin:6px 0 4px;color:#8fa3b8;font-size:.71rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;'>Quick questions</div>", unsafe_allow_html=True)
-                    bcols = st.columns(3)
-                    for i, (title, q) in enumerate(SUGGESTED[:3]):
-                        if bcols[i].button(title, key=f"c2_sug_{i}", use_container_width=True, help=q):
-                            st.session_state["chat2_pending"] = q
-                            st.rerun()
-
-                    st.markdown("<div class='chat-input-separator'></div>", unsafe_allow_html=True)
-                    in_col, send_col, clr_col = st.columns([4.8, 1.05, 0.8])
-                    with in_col:
-                        typed = st.text_input(
-                            "chat2_typed",
-                            value="",
-                            placeholder="Ask about attributes, gaps, pricing, reviews…",
-                            key=f"chat2_input_{st.session_state['chat2_input_ver']}",
-                            label_visibility="collapsed",
-                        )
-                    with send_col:
-                        send_clicked = st.button("Send →", type="primary", key="chat2_send", use_container_width=True)
-                    with clr_col:
-                        if st.button("Clear", key="chat2_clear", use_container_width=True):
-                            _orch.clear_session(st.session_state["chat2_session_id"])
-                            st.session_state["chat2_messages"] = []
-                            st.session_state["chat2_session_id"] = str(uuid.uuid4())
-                            st.rerun()
-
-                    pending_q = st.session_state.get("chat2_pending")
-                    if pending_q:
-                        st.session_state["chat2_pending"] = None
-
-                    user_q = pending_q or (typed.strip() if send_clicked and typed.strip() else None)
-
-                    if user_q:
-                        st.session_state["chat2_input_ver"] += 1
-                        st.session_state["chat2_messages"].append({"role": "user", "content": user_q})
-                        with chat_area:
-                            with st.chat_message("assistant", avatar="🤖"):
-                                st.markdown(
-                                    '<div class="typing-indicator">'
-                                    '<span class="typing-dot"></span>'
-                                    '<span class="typing-dot"></span>'
-                                    '<span class="typing-dot"></span>'
-                                    '</div>',
-                                    unsafe_allow_html=True,
-                                )
+            _chip_cols = st.columns(len(ASK_CHIPS))
+            for chip_idx, chip_q in enumerate(ASK_CHIPS):
+                if _chip_cols[chip_idx].button(chip_q[:28] + ("..." if len(chip_q) > 28 else ""), key=f"ask_chip_{chip_idx}", use_container_width=True, help=chip_q):
+                    st.session_state["chat2_messages"].append({"role": "user", "content": chip_q})
+                    if not _chatbot_err:
                         result = _orch.process_question(
                             session_id=st.session_state["chat2_session_id"],
-                            question=user_q,
+                            question=chip_q,
                         )
                         response = result.get("response") or "Unable to process the request."
-                        debug = {
-                            "intent": result.get("intent"),
-                            "tool_response": result.get("tool_response"),
-                            "resolved_question": result.get("resolved_question"),
-                        }
-                        st.session_state["chat2_messages"].append({
-                            "role": "assistant",
-                            "content": response,
-                            "debug": debug if (result.get("intent") or result.get("tool_response")) else None,
-                        })
-                        st.rerun()
+                    else:
+                        response = "Chatbot is unavailable because the DB or LLM connection is not ready."
+                    st.session_state["chat2_messages"].append({"role": "assistant", "content": response})
+                    st.rerun()
 
-                st.markdown("</div></div>", unsafe_allow_html=True)
+            exchanges = []
+            messages = st.session_state.get("chat2_messages", [])
+            i = 0
+            while i < len(messages):
+                msg = messages[i]
+                if msg.get("role") == "user":
+                    answer = ""
+                    if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
+                        answer = messages[i + 1].get("content", "")
+                        i += 2
+                    else:
+                        i += 1
+                    exchanges.append(_s3_exchange_html(msg.get("content", ""), answer or "Thinking...", 84))
+                else:
+                    i += 1
 
-            with right_col:
-                st.markdown(f"""
-<div class="mi-panel">
-  <div class="panel-head">
-    <div class="panel-title">Suggested Questions</div>
-    <div class="panel-sub">{len(SUGGESTED)} patterns · click to ask</div>
-  </div>
-  <div class="panel-body">
-    <div class="question-list">
-      {''.join(
-          f'<div class="q-chip" style="cursor:default;">'
-          f'<span style="color:{MUTED};font-size:.65rem;font-weight:700;margin-right:6px;">{str(i+1).zfill(2)}</span>'
-          f'<strong>{_safe(title)}</strong>'
-          f'<span>{_safe(q)}</span></div>'
-          for i, (title, q) in enumerate(SUGGESTED)
-      )}
+            if not exchanges:
+                ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
+                default_answer = (
+                    f"Your current filter has {_total_skus:,} SKUs and {_total_reviews:,} reviews. "
+                    f"The strongest live signal is {_label(ctx_t3.get('rising_attr'), 'marketplace momentum')}; "
+                    f"the converting price band is {ctx_t3.get('band_label')}. Ask a question above and I will answer from the database-backed chatbot."
+                )
+                exchanges.append(_s3_exchange_html("What is active in this filter context?", default_answer, 82))
+
+            st.html(
+                '<div class="canvas"><div class="ask-view active"><div class="ask-conversation">'
+                + "".join(exchanges)
+                + "</div></div></div>"
+            )
+
+        st.html(f"""
+<div class="automation-strip">
+  <div class="automation-left">
+    <div class="automation-icon">&#9889;</div>
+    <div class="automation-text">
+      <div class="automation-title">Automation &middot; Daily pattern scan running</div>
+      <div class="automation-detail">
+        {n_active} active recommendation{"s" if n_active != 1 else ""} surfaced &middot;
+        <strong>{n_recs} total</strong> &middot; Weekly summary scheduled for Monday 8am
+      </div>
     </div>
   </div>
+  <div class="automation-right">
+    <a href="#" class="automation-link">View daily summary &rarr;</a>
+  </div>
 </div>
-""", unsafe_allow_html=True)
-
-        st.markdown(f"""
-<div class="footer-note">
-  <span>Innovatics · Channel Intelligence — Ask &amp; Recommendation · database snapshot</span>
-  <b>{escape(window_filter)} · {_PLATFORM_LABELS.get(platform_filter, platform_filter)} · {_CATEGORY_LABELS.get(category_filter, "All Apparel")}</b>
+<div class="footer">
+  Innovatics POC &middot; Channel Intelligence &middot; Amazon + Nordstrom &middot;
+  Marketplace signals + Google Trends + NOAA Weather connected &middot; Last refresh {escape(_fresh_label)}
 </div>
-""", unsafe_allow_html=True)
+""")

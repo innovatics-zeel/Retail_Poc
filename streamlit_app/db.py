@@ -429,6 +429,86 @@ def load_trend_scores(category: str = None, platform: str = None,
     finally:
         db.close()
 
+# ── Trend scores & recommendations ───────────────────────────────────────────
+
+def load_category_week_delta(platform: str = None, category: str = None) -> pd.DataFrame:
+    """Return current-week and prior-week review counts per category for delta calculation.
+
+    Queries product_review_snapshots for the last 7 days (current week) and
+    the 7 days before that (prior week), grouped by category.
+
+    Returns DataFrame with columns: category, current_reviews, prior_reviews, current_share, prior_share, delta_pct
+    """
+    db = _session()
+    try:
+        conditions, params = [], {}
+        if platform and platform != "All":
+            conditions.append("pl.name = :platform")
+            params["platform"] = platform
+        if category and category != "All":
+            conditions.append("cat.name = :category")
+            params["category"] = category
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        current_prefix = f"{where} AND" if where else "WHERE"
+
+        sql = f"""
+        WITH current_week AS (
+            SELECT cat.name AS category,
+                   COALESCE(SUM(r.review_count), 0) AS reviews
+            FROM product_review_snapshots r
+            JOIN products p ON p.product_id = r.product_id
+            JOIN categories cat ON cat.category_id = p.category_id
+            JOIN platforms pl ON pl.id = p.platform_id
+            {current_prefix} r.scraped_at >= NOW() - INTERVAL '7 days'
+            GROUP BY cat.name
+        ),
+        prior_week AS (
+            SELECT cat.name AS category,
+                   COALESCE(SUM(r.review_count), 0) AS reviews
+            FROM product_review_snapshots r
+            JOIN products p ON p.product_id = r.product_id
+            JOIN categories cat ON cat.category_id = p.category_id
+            JOIN platforms pl ON pl.id = p.platform_id
+            {current_prefix} r.scraped_at >= NOW() - INTERVAL '14 days'
+              AND r.scraped_at < NOW() - INTERVAL '7 days'
+            GROUP BY cat.name
+        ),
+        totals AS (
+            SELECT
+                COALESCE(cw.category, pw.category) AS category,
+                COALESCE(cw.reviews, 0) AS current_reviews,
+                COALESCE(pw.reviews, 0) AS prior_reviews
+            FROM current_week cw
+            FULL OUTER JOIN prior_week pw ON cw.category = pw.category
+        )
+        SELECT
+            category,
+            current_reviews,
+            prior_reviews,
+            CASE WHEN (SELECT SUM(current_reviews) FROM totals) > 0
+                 THEN current_reviews::numeric / (SELECT SUM(current_reviews) FROM totals)
+                 ELSE 0 END AS current_share,
+            CASE WHEN (SELECT SUM(prior_reviews) FROM totals) > 0
+                 THEN prior_reviews::numeric / (SELECT SUM(prior_reviews) FROM totals)
+                 ELSE 0 END AS prior_share,
+            CASE WHEN (SELECT SUM(prior_reviews) FROM totals) > 0 AND prior_reviews > 0
+                 THEN ROUND(((current_reviews::numeric / NULLIF((SELECT SUM(current_reviews) FROM totals), 0))
+                            - (prior_reviews::numeric / NULLIF((SELECT SUM(prior_reviews) FROM totals), 0))) * 100, 1)
+                 ELSE 0 END AS delta_pct
+        FROM totals
+        ORDER BY current_reviews DESC
+        """
+        rows = db.execute(text(sql), params).mappings().fetchall()
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame([dict(r) for r in rows])
+        for col in ("current_reviews", "prior_reviews", "current_share", "prior_share", "delta_pct"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        return df
+    finally:
+        db.close()
+
 
 def load_recommendations(category: str = None, platform: str = None,
                          status: str = None, limit: int = 30) -> list[dict]:
