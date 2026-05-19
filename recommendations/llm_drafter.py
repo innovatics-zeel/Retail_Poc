@@ -58,6 +58,10 @@ Rules:
 - If lifecycle_stage or retailer_action exists, align the Action to it.
 - Keep each section under 35 words.
 - Do not invent metrics that are not in the evidence block.
+- Confidence criteria — use exactly one:
+  High: momentum_score > 0.20 AND review_count > 2000 AND lifecycle = emerging or accelerating
+  Medium: momentum_score 0.08–0.20 OR review_count 500–2000 OR lifecycle = plateau
+  Low: momentum_score < 0.08 OR conflicting signals OR lifecycle = dead/declining
 """
 
 

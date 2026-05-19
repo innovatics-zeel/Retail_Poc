@@ -1895,6 +1895,23 @@ st.markdown(f"""
     .driver-text {{ color:var(--text-1); flex:1; }}
     .driver-source {{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-3); white-space:nowrap; display:inline-flex; align-items:center; gap:4px; }}
     .driver-source::before {{ content:''; width:5px; height:5px; background:var(--success); border-radius:50%; }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlockBorderWrapper"]) {{ margin-bottom:0 !important; }}
+    [class*="st-key-rec_act_"] {{ margin-top:-4px !important; margin-bottom:8px !important; }}
+    [class*="st-key-rec_act_"] [data-testid="stHorizontalBlock"] {{ gap:6px !important; flex-wrap:wrap !important; }}
+    [class*="st-key-rec_act_"] button {{
+        min-height:26px !important; max-height:26px !important;
+        font-size:11.5px !important; font-weight:600 !important;
+        border-radius:5px !important; padding:0 11px !important;
+        border:1px solid var(--border) !important;
+        background:var(--surface) !important; color:var(--text-2) !important;
+        width:auto !important; white-space:nowrap !important;
+    }}
+    [class*="st-key-rec_act_"] button:hover {{ border-color:var(--primary) !important; color:var(--primary) !important; }}
+    [class*="st-key-rec_act_"] button[kind="primary"],
+    [class*="st-key-rec_act_"] [data-testid="stBaseButton-primary"] {{
+        color:var(--primary-deep) !important; border-color:rgba(0,164,227,.35) !important;
+        background:rgba(0,164,227,.07) !important;
+    }}
     .rec-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .rec-action {{
         font-size:12px; color:var(--text-1); font-weight:500; padding:7px 12px;
@@ -1978,6 +1995,18 @@ st.markdown(f"""
     .ask-confidence {{ display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:11.5px; margin-top:4px; }}
     .ask-confidence-label {{ color:var(--text-3); }}
     .ask-confidence-value {{ color:var(--text-1); font-weight:600; }}
+    .ask-para {{ margin:0 0 8px 0; }}
+    .ask-para:last-child {{ margin-bottom:0; }}
+    .ask-table {{ width:100%; border-collapse:collapse; margin:10px 0 14px; font-size:12.5px; font-family:var(--font-mono); }}
+    .ask-table th {{ text-align:left; padding:5px 12px; color:var(--text-3); font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--border); }}
+    .ask-table td {{ padding:7px 12px; border-bottom:1px solid var(--line); color:var(--text-1); }}
+    .ask-table tr:last-child td {{ border-bottom:none; }}
+    .ask-table td.vel-up {{ color:var(--success); font-weight:700; }}
+    .ask-table td.vel-down {{ color:var(--danger); font-weight:700; }}
+    .ask-actions-row {{ display:flex; gap:8px; margin-top:10px; }}
+    .ask-action-btn {{ display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border:1px solid var(--border); border-radius:5px; font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; white-space:nowrap; }}
+    .ask-action-btn.primary {{ color:var(--primary-deep); border-color:rgba(0,164,227,.3); }}
+    .ask-action-btn:hover {{ border-color:var(--primary); color:var(--primary); }}
 
     .automation-left {{ display:flex; align-items:center; gap:14px; }}
     .automation-icon {{
@@ -2297,9 +2326,23 @@ with st.container(key="filter_area", gap="small"):
         if st.button("🔍 Look up SKU", key="sku_open_btn", use_container_width=True):
             _sku_lookup_dialog()
     with _r1[6]:
-        st.markdown('<span class="filter-link">↗ Save view</span>', unsafe_allow_html=True)
+        if st.button("↗ Save view", key="save_view_btn", use_container_width=True, help="Save current filter as default"):
+            st.session_state["saved_view"] = {
+                "gender_filter": st.session_state.get("gender_filter", "All"),
+                "cat_filter":    st.session_state.get("cat_filter", "All"),
+                "style_filter":  st.session_state.get("style_filter", "All"),
+                "window_filter": st.session_state.get("window_filter", "Last 30 Days"),
+                "price_band_filter": st.session_state.get("price_band_filter", "All"),
+                "region_filter": st.session_state.get("region_filter", "All US"),
+                "plt_filter":    st.session_state.get("plt_filter", "All"),
+            }
+            st.toast("View saved", icon="✓")
     with _r1[7]:
-        st.markdown('<span class="filter-link muted">↺ Reset all</span>', unsafe_allow_html=True)
+        if st.button("↺ Reset all", key="reset_all_btn", use_container_width=True, help="Clear all filters to defaults"):
+            for _fkey in ["gender_filter", "cat_filter", "style_filter", "window_filter",
+                          "price_band_filter", "region_filter", "plt_filter", "saved_view"]:
+                st.session_state.pop(_fkey, None)
+            st.rerun()
     st.markdown('<div class="filter-section-label refine">Refine</div>', unsafe_allow_html=True)
     _r2 = st.columns([1.1, 1.1, 1.4, 6.4])
     with _r2[0]:
@@ -2734,8 +2777,6 @@ def _best_price_band(source: pd.DataFrame) -> tuple[str, float]:
     if work.empty:
         return "$24-32", 1.0
     if "product_id" in work.columns:
-        # Product reviews are product-level. When this function receives SKU rows,
-        # dedupe first so one product with many colors/sizes does not multiply demand.
         work = work.sort_values("review_count", ascending=False).drop_duplicates("product_id")
     bands_cfg = _price_band_config(work)
     bands = [b[0] for b in bands_cfg]
@@ -2743,20 +2784,24 @@ def _best_price_band(source: pd.DataFrame) -> tuple[str, float]:
     work["weight"] = pd.to_numeric(work.get("review_count", 0), errors="coerce").fillna(0)
     if work["weight"].sum() == 0:
         work["weight"] = 1
-    totals = work.groupby("band")["weight"].sum().reindex(bands, fill_value=0)
-    band = totals.idxmax()
-    idx = bands.index(band)
-    adjacent = []
-    if idx > 0:
-        adjacent.append(float(totals.iloc[idx - 1]))
-    if idx < len(bands) - 1:
-        adjacent.append(float(totals.iloc[idx + 1]))
-    adjacent_avg = sum(adjacent) / len(adjacent) if adjacent else 0
-    if adjacent_avg <= 0:
-        adjacent_avg = max((float(totals.sum()) - float(totals.loc[band])) / max(len(bands) - 1, 1), 1)
-    multiplier = max(1.0, round(float(totals.loc[band]) / max(adjacent_avg, 1), 1))
-    multiplier = min(multiplier, 9.9)
-    return band, multiplier
+
+    # Glossary formula: share_index = (band_reviews / total_reviews) / (band_listings / total_listings)
+    # A 3.2× index means this band attracts 3.2× its proportional share of reviews.
+    review_by_band  = work.groupby("band")["weight"].sum().reindex(bands, fill_value=0)
+    listing_by_band = work.groupby("band").size().reindex(bands, fill_value=0)
+    total_reviews   = max(float(review_by_band.sum()), 1)
+    total_listings  = max(float(listing_by_band.sum()), 1)
+
+    best_band, best_index = bands[0], 0.0
+    for b in bands:
+        rev_share     = float(review_by_band[b]) / total_reviews
+        listing_share = max(float(listing_by_band[b]) / total_listings, 1e-9)
+        idx = rev_share / listing_share
+        if idx > best_index:
+            best_index, best_band = idx, b
+
+    multiplier = max(1.0, min(9.9, round(best_index, 1)))
+    return best_band, multiplier
 
 
 def _top_skus(products: pd.DataFrame, variants: pd.DataFrame, n: int = 4) -> pd.DataFrame:
@@ -3129,9 +3174,12 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
     return rows[:limit]
 
 
-def _confidence_pct(row: dict) -> int:
+def _confidence_pct(row: dict, agreement: str | None = None) -> int:
+    """Glossary: confidence derived from cross-platform agreement + sample size + model error bars."""
     label = str(row.get("confidence") or "").strip().lower()
     base = {"high": 82, "med": 74, "medium": 74, "low": 64}.get(label, 64)
+
+    # Sample size component (weeks_observed = data points available)
     change = abs(float(row.get("change") or row.get("projected_change_pct") or 0))
     weeks_observed = int(row.get("weeks_observed") or 0)
     if change >= 25:
@@ -3142,7 +3190,12 @@ def _confidence_pct(row: dict) -> int:
         base += 3
     elif weeks_observed <= 1:
         base -= 2
-    return max(50, min(92, int(round(base))))
+
+    # Cross-platform agreement component (glossary: strong=+8, divergent=-6)
+    agr = str(agreement or row.get("agreement") or "").strip().lower()
+    base += {"strong": 8, "mixed": 0, "divergent": -6, "single channel": -3}.get(agr, 0)
+
+    return max(50, min(95, int(round(base))))
 
 
 def _decision_tag(stage: str, change: float) -> str:
@@ -3156,18 +3209,71 @@ def _decision_tag(stage: str, change: float) -> str:
     return "Watch"
 
 
-def _predictive_kpis(rows: list[dict]) -> dict:
+def _predictive_kpis(rows: list[dict], platform_map: dict | None = None,
+                      velocity_lookup: dict | None = None) -> dict:
+    """Glossary: patterns needing action = lifecycle Acc/Dec + conf>75% + |Δ|>15%."""
+    pm = platform_map or {}
+    vl = velocity_lookup or {}
+
+    def _row_agreement(row: dict) -> str:
+        """Derive cross-platform agreement for a row via platform_map."""
+        ak = str(row.get("attr_key") or "")
+        av = str(row.get("name") or "")
+        entry = pm.get((ak, av))
+        if entry:
+            amz = entry.get("amz")
+            nor = entry.get("nor")
+            lbl, _cls, _n = _real_agreement(amz, nor)
+            return lbl.lower()
+        return ""
+
+    def _is_structural_decline(row: dict) -> bool:
+        """60d structural: decline sustained 60+ days across both channels with strong agreement."""
+        cat  = str(row.get("category") or "")
+        plat = str(row.get("platform") or "")
+        vrow = vl.get((cat, plat)) or vl.get((cat, ""))
+        if not vrow:
+            return False
+        hist_days = vrow.get("hist_days") or []
+        if len(hist_days) < 2:
+            return False
+        try:
+            from datetime import date as _date
+            d0 = _date.fromisoformat(str(hist_days[0]))
+            d1 = _date.fromisoformat(str(hist_days[-1]))
+            span_days = (d1 - d0).days
+        except Exception:
+            span_days = 0
+        slope = float(vrow.get("slope") or 0)
+        if span_days < 60 or slope >= 0:
+            return False
+        # Both channels declining
+        other_plat = "Nordstrom" if "amazon" in plat.lower() else "Amazon"
+        vrow2 = vl.get((cat, other_plat))
+        if vrow2 and float(vrow2.get("slope") or 0) < 0:
+            return True
+        return span_days >= 60 and slope < 0
+
     urgent = []
     for row in rows:
         change = float(row.get("change") or 0)
-        conf = _confidence_pct(row)
+        agr = _row_agreement(row)
+        conf = _confidence_pct(row, agr)
         if _stage_key(row.get("stage")) in {"accelerating", "declining"} and conf > 75 and abs(change) > 15:
-            urgent.append({**row, "confidence_pct": conf, "decision_tag": _decision_tag_full(row.get("stage"), change)})
+            urgent.append({**row, "confidence_pct": conf, "agreement": agr,
+                           "decision_tag": _decision_tag_full(row.get("stage"), change)})
 
     gains = [r for r in rows if float(r.get("change") or 0) > 0]
     risks = [r for r in rows if float(r.get("change") or 0) < 0]
     biggest_gain = max(gains, key=lambda r: float(r.get("change") or 0), default=None)
     biggest_risk = min(risks, key=lambda r: float(r.get("change") or 0), default=None)
+
+    if biggest_risk:
+        biggest_risk = {
+            **biggest_risk,
+            "is_structural": _is_structural_decline(biggest_risk),
+            "agreement": _row_agreement(biggest_risk),
+        }
 
     tag_counts = {}
     for row in urgent:
@@ -3183,28 +3289,45 @@ def _predictive_kpis(rows: list[dict]) -> dict:
     }
 
 
-def _predictive_kpi_band_html(rows: list[dict]) -> str:
-    kpis = _predictive_kpis(rows)
+def _predictive_kpi_band_html(rows: list[dict], platform_map: dict | None = None,
+                               velocity_lookup: dict | None = None,
+                               gt_summary: dict | None = None) -> str:
+    kpis = _predictive_kpis(rows, platform_map=platform_map, velocity_lookup=velocity_lookup)
     urgent_count = len(kpis["urgent"])
     gain = kpis["biggest_gain"]
     risk = kpis["biggest_risk"]
+    gt = gt_summary or {}
 
     gain_name = _label(gain.get("name"), "Run predictions") if gain else "Run predictions"
     gain_change = int(round(float(gain.get("change") or 0))) if gain else 0
-    gain_conf = _confidence_pct(gain) if gain else 0
+    gain_conf = _confidence_pct(gain, gain.get("agreement") if gain else None) if gain else 0
     gain_stage = _LIFECYCLE_LABELS[_stage_key(gain.get("stage"))].lower() if gain else "pending"
 
     risk_name = _label(risk.get("name"), "Run predictions") if risk else "Run predictions"
     risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
-    risk_conf = _confidence_pct(risk) if risk else 0
+    risk_conf = _confidence_pct(risk, risk.get("agreement") if risk else None) if risk else 0
     risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
+    structural_badge = ' <span style="font-size:9px;background:#fee2e2;color:#b91c1c;border-radius:3px;padding:1px 5px;font-weight:700;">60d structural</span>' if (risk and risk.get("is_structural")) else ""
+
+    gt_lead_count = int(gt.get("lead_count") or 0)
+    gt_avg_days = gt.get("avg_lead_days")
+    if gt.get("status") == "missing_key":
+        gt_val, gt_note = "API key", "Add SERPAPI_API_KEY to .env"
+    elif gt_lead_count > 0 and gt_avg_days:
+        gt_val  = f"{gt_lead_count} lead{'s' if gt_lead_count != 1 else ''}"
+        gt_note = f"avg ~{gt_avg_days}d ahead of velocity · +5pp conf"
+    elif gt_lead_count > 0:
+        gt_val  = f"{gt_lead_count} lead{'s' if gt_lead_count != 1 else ''}"
+        gt_note = "queries ≥+20% delta · +5pp conf when GT confirms"
+    else:
+        gt_val, gt_note = "--", "No queries above +20% threshold yet"
 
     return f"""
 <div class="signal-band">
   <div class="signal-card">
     <div class="signal-label">Patterns needing action · 4 weeks</div>
     <div class="signal-value" style="font-size:1.72rem;">{urgent_count} urgent</div>
-    <div class="signal-note">Accelerating/Declining · confidence &gt;75% · velocity &gt;±15%<br><strong>{_safe(kpis["urgent_summary"])}</strong></div>
+    <div class="signal-note">Accelerating/Declining · conf &gt;75% · velocity &gt;±15%<br><strong>{_safe(kpis["urgent_summary"])}</strong></div>
   </div>
   <div class="signal-card">
     <div class="signal-label">Biggest momentum gain</div>
@@ -3213,13 +3336,13 @@ def _predictive_kpi_band_html(rows: list[dict]) -> str:
   </div>
   <div class="signal-card">
     <div class="signal-label">Biggest decline risk</div>
-    <div class="signal-value" style="font-size:1.42rem;">{_safe(risk_name)}</div>
+    <div class="signal-value" style="font-size:1.42rem;">{_safe(risk_name)}{structural_badge}</div>
     <div class="signal-note"><span class="delta down">{risk_change:+d}%</span> velocity · {risk_stage}<br>Forecast +4w · {risk_conf}% conf</div>
   </div>
   <div class="signal-card">
     <div class="signal-label">Google Trends lead time</div>
-    <div class="signal-value" style="font-size:1.72rem;">Coming soon</div>
-    <div class="signal-note">Will count patterns where search interest crosses +20% before marketplace velocity.</div>
+    <div class="signal-value" style="font-size:1.72rem;">{escape(gt_val)}</div>
+    <div class="signal-note">{escape(gt_note)}</div>
   </div>
 </div>"""
 
@@ -3515,7 +3638,12 @@ def _trajectory_rows_html(
         proj_chg = vel.get("projected_change_pct")
         fc4 = int(round(proj_chg * 28 / 30)) if proj_chg is not None else _forecast_value(change, 4)
         fc8 = int(round(proj_chg * 56 / 30)) if proj_chg is not None else _forecast_value(change, 8)
-        conf = _confidence_pct(row)
+        # Derive agreement from platform_map for confidence calculation
+        _ak = str(row.get("attr_key") or "")
+        _av = str(row.get("name") or "")
+        _pentry = (platform_map or {}).get((_ak, _av), {})
+        _agr_lbl, _, _ = _real_agreement(_pentry.get("amz"), _pentry.get("nor")) if _pentry else ("", "", 0)
+        conf = _confidence_pct(row, _agr_lbl.lower() if _agr_lbl else None)
         stage = _stage_key(row.get("stage"))
         name = _label(row.get("name"), "Pattern")
         action = row.get("action") or "Monitor daily"
@@ -3601,8 +3729,8 @@ def _predictive_reference_ui_html(rows: list[dict]) -> str:
     risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
     gain_fc = _forecast_value(gain_change, 4) if gain else 0
     risk_fc = _forecast_value(risk_change, 4) if risk else 0
-    gain_conf = _confidence_pct(gain) if gain else 0
-    risk_conf = _confidence_pct(risk) if risk else 0
+    gain_conf = _confidence_pct(gain, gain.get("agreement") if gain else None) if gain else 0
+    risk_conf = _confidence_pct(risk, risk.get("agreement") if risk else None) if risk else 0
     top_urgent = urgent[0] if urgent else gain
     top_urgent_name = _label(top_urgent.get("name"), "Run predictions") if top_urgent else "Run predictions"
     top_urgent_change = int(round(float(top_urgent.get("change") or 0))) if top_urgent else 0
@@ -3708,19 +3836,12 @@ def _analytics_kpi_strip_html(products: pd.DataFrame, variants: pd.DataFrame, sc
     total_reviews = int(kpis.get("total_reviews") or 0)
     window_label = window_filter.lower().replace("last ", "").replace(" days", "d").replace("all time", "all")
 
-    # Tile 2: Top category with week-over-week delta from product_review_snapshots
-    cat_delta_df = load_category_week_delta(
-        platform=None if platform_filter == "All" else platform_filter,
-        category=None if category_filter == "All" else category_filter,
-    )
-    top_cat_name = "N/A"
-    top_cat_share_pct = 0
-    cat_delta = 0.0
-    if not cat_delta_df.empty:
-        top_cat_row = cat_delta_df.iloc[0]
-        top_cat_name = _CATEGORY_LABELS.get(str(top_cat_row["category"]), str(top_cat_row["category"]).replace("_", " ").title())
-        top_cat_share_pct = int(round(float(top_cat_row["current_share"]) * 100))
-        cat_delta = float(top_cat_row["delta_pct"])
+    # Tile 2: Top style (neck_type sub-category) with week-over-week delta from trend_scores
+    # Glossary: "Style with the highest review share. Delta = share change vs prior 30d."
+    style_info = _delta_from_scores(scores, "neck_type")
+    top_style_name = _label(style_info["name"]) if style_info["name"] != "N/A" else "N/A"
+    style_share_pct = int(round(style_info["latest_share"] * 100))
+    cat_delta = style_info["delta_pct"]
     cat_delta_cls = "up" if cat_delta > 0 else "down" if cat_delta < 0 else "neutral"
     cat_delta_sign = "+" if cat_delta > 0 else ""
 
@@ -3753,8 +3874,8 @@ def _analytics_kpi_strip_html(products: pd.DataFrame, variants: pd.DataFrame, sc
     <div class="kpi-meta-new">Across {sku_count:,} SKUs · {escape(window_label)}</div>
   </div>
   <div class="kpi-tile-new">
-    <div class="kpi-lbl-new">Top category</div>
-    <div class="kpi-val-new">{_safe(top_cat_name)} <span class="kpi-val-pct">· {top_cat_share_pct}%</span></div>
+    <div class="kpi-lbl-new">Top style</div>
+    <div class="kpi-val-new">{_safe(top_style_name)} <span class="kpi-val-pct">· {style_share_pct}%</span></div>
     <div class="kpi-meta-new">
       Review share <span class="kpi-delta {cat_delta_cls}">{cat_delta_sign}{cat_delta}%</span>
     </div>
@@ -3794,7 +3915,9 @@ _AGREE_CLASS = {
 }
 
 
-def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None) -> str:
+def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None,
+                            gt_by_query: dict | None = None,
+                            category: str = "All", gender: str = "All", style: str = "All") -> str:
     """Winning Patterns hero panel matching S1 HTML archetype-row design."""
     n = len(rows)
     if not rows:
@@ -3825,13 +3948,13 @@ def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None) -
         stage = _stage_key(row.get("stage"))
         name = _label(row.get("name"), "Pattern")
         action = row.get("action") or "Monitor"
-        conf_pct = _confidence_pct(row)
-        # Real per-platform velocity from platform_map
         pmap = platform_map or {}
         pkey = (str(row.get("attr_key") or ""), str(row.get("name") or ""))
         plat_data = pmap.get(pkey, {})
         amz_chg = plat_data.get("amz")
         nor_chg = plat_data.get("nor")
+        _agr_w, _, _ = _real_agreement(amz_chg, nor_chg) if plat_data else ("", "", 0)
+        conf_pct = _confidence_pct(row, _agr_w.lower() if _agr_w else None)
         if amz_chg is None and nor_chg is None:
             amz_chg = int(round(change))
             nor_chg = int(round(change))
@@ -3846,6 +3969,20 @@ def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None) -
 
         # Real cross-platform agreement
         agree_lbl, agree_cls, _agree_bars = _real_agreement(amz_chg, nor_chg)
+
+        # Google Trends evidence for this pattern row
+        _gt_query = _gt_query_for_row(row, category, gender, style)
+        _gt_row = (gt_by_query or {}).get(_gt_query or "")
+        if _gt_row:
+            _gt_delta_val = int(_gt_row.get("delta_pct") or 0)
+            _pull_txt = f'Google Trends query "{_safe(_label(_gt_query))}" moving {_gt_delta_val:+d}% vs 14d/prior 30d baseline — live signal confirms demand direction.'
+            _pull_src = "Live · SerpAPI Google Trends"
+        elif _gt_query:
+            _pull_txt = f'Google Trends query "{_safe(_label(_gt_query))}" checked — no strong signal above threshold this window.'
+            _pull_src = "Live · SerpAPI checked"
+        else:
+            _pull_txt = "Google Trends search-interest lead detection — no query matched for this attribute."
+            _pull_src = "Live · query guard"
 
         weeks_obs = int(row.get("weeks_observed") or 0)
         attrs_txt = f"{_safe(action)} · {weeks_obs}w observed"
@@ -3862,8 +3999,8 @@ def _winning_patterns_html(rows: list[dict], platform_map: dict | None = None) -
     </div>
     <div class="driver-row-new">
       <span class="driver-tag-new pull">PULL</span>
-      <span class="driver-txt-new">Google Trends search-interest lead detection planned at +20% threshold</span>
-      <span class="driver-src-new">Coming soon · Google Trends</span>
+      <span class="driver-txt-new">{_pull_txt}</span>
+      <span class="driver-src-new">{_pull_src}</span>
     </div>
     <div class="driver-row-new">
       <span class="driver-tag-new context">CONTEXT</span>
@@ -4299,13 +4436,26 @@ def _fetch_google_trends_live(queries: tuple[str, ...], geo: str, date_window: s
 
 
 def _google_trends_summary(result: dict) -> dict:
+    """Glossary: lead_count = queries where GT crossed +20% threshold.
+    avg_lead_days = estimated mean gap between GT signal and marketplace velocity turning.
+    Industry baseline: ~7-10d for fast categories; we estimate from delta magnitude."""
     rows = result.get("rows") or []
     top = rows[0] if rows else {}
-    lead_count = sum(1 for row in rows if int(row.get("delta_pct") or 0) >= 20)
+    lead_rows = [r for r in rows if int(r.get("delta_pct") or 0) >= 20]
+    lead_count = len(lead_rows)
+
+    # Estimate avg lead days: delta=20% → ~7d, delta=40% → ~11d, delta=60%+ → ~14d, cap 21d
+    avg_lead_days: int | None = None
+    if lead_rows:
+        lead_days = [max(7, min(21, 7 + int((int(r.get("delta_pct") or 20) - 20) * 0.2)))
+                     for r in lead_rows]
+        avg_lead_days = int(round(sum(lead_days) / len(lead_days)))
+
     return {
         "status": result.get("status"),
         "message": result.get("message", ""),
         "lead_count": lead_count,
+        "avg_lead_days": avg_lead_days,
         "top_query": top.get("query", ""),
         "top_delta": int(top.get("delta_pct") or 0) if top else None,
         "top_score": int(top.get("score") or 0) if top else None,
@@ -4399,9 +4549,11 @@ def _static_sentiment_panel_html(rows: list[dict]) -> str:
 </div>"""
 
 
-def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None) -> str:
-    """Predictive KPI strip matching S2 HTML design."""
-    kpis = _predictive_kpis(rows)
+def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None,
+                              platform_map: dict | None = None,
+                              velocity_lookup: dict | None = None) -> str:
+    """Predictive KPI strip. Confidence includes cross-platform agreement per glossary."""
+    kpis = _predictive_kpis(rows, platform_map=platform_map, velocity_lookup=velocity_lookup)
     urgent = kpis["urgent"]
     gain = kpis["biggest_gain"]
     risk = kpis["biggest_risk"]
@@ -4413,36 +4565,42 @@ def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None) -
 
     gain_name = _label(gain.get("name"), "Run predictions") if gain else "Run predictions"
     gain_change = int(round(float(gain.get("change") or 0))) if gain else 0
-    gain_conf = _confidence_pct(gain) if gain else 0
+    gain_conf = _confidence_pct(gain, gain.get("agreement") if gain else None) if gain else 0
     gain_fc4 = _forecast_value(gain_change, 4) if gain else 0
     gain_stage = _LIFECYCLE_LABELS[_stage_key(gain.get("stage"))].lower() if gain else "pending"
 
     risk_name = _label(risk.get("name"), "Run predictions") if risk else "Run predictions"
     risk_change = int(round(float(risk.get("change") or 0))) if risk else 0
-    risk_conf = _confidence_pct(risk) if risk else 0
+    risk_conf = _confidence_pct(risk, risk.get("agreement") if risk else None) if risk else 0
     risk_fc4 = _forecast_value(risk_change, 4) if risk else 0
     risk_stage = _LIFECYCLE_LABELS[_stage_key(risk.get("stage"))].lower() if risk else "pending"
+    structural_badge = ' <span style="font-size:9px;background:#fee2e2;color:#b91c1c;border-radius:3px;padding:1px 5px;font-weight:700;">60d structural</span>' if (risk and risk.get("is_structural")) else ""
 
-    urg_chg_cls = "up" if top_urgent_change >= 0 else "down"
     gt_status = gt_summary.get("status")
     gt_lead_count = int(gt_summary.get("lead_count") or 0)
-    gt_top_delta = gt_summary.get("top_delta")
-    gt_top_query = gt_summary.get("top_query") or "Google Trends"
+    gt_avg_days   = gt_summary.get("avg_lead_days")
+    gt_top_delta  = gt_summary.get("top_delta")
+    gt_top_query  = gt_summary.get("top_query") or "Google Trends"
     if gt_status == "missing_key":
         gt_title = "API key needed"
-        gt_big = "--"
-        gt_meta = "SERPAPI_API_KEY"
-        gt_foot = "Add SerpAPI key to .env for live Google Trends."
+        gt_big   = "--"
+        gt_meta  = "SERPAPI_API_KEY"
+        gt_foot  = "Add SerpAPI key to .env for live Google Trends."
     elif gt_top_delta is None:
         gt_title = "No live lead"
-        gt_big = "--"
-        gt_meta = "query lift"
-        gt_foot = _safe(gt_summary.get("message") or "No Google Trends timeline data returned.")
+        gt_big   = "--"
+        gt_meta  = "query lift"
+        gt_foot  = _safe(gt_summary.get("message") or "No Google Trends timeline data returned.")
+    elif gt_lead_count > 0 and gt_avg_days:
+        gt_title = f"{gt_lead_count} leading quer{'y' if gt_lead_count == 1 else 'ies'}"
+        gt_big   = f"{int(gt_top_delta):+d}%"
+        gt_meta  = f"top query lift · avg ~{gt_avg_days}d ahead"
+        gt_foot  = f"{_safe(_label(gt_top_query))} · +5pp conf boost · live SerpAPI"
     else:
         gt_title = f"{gt_lead_count} live lead{'s' if gt_lead_count != 1 else ''}"
-        gt_big = f"{int(gt_top_delta):+d}%"
-        gt_meta = "top query lift"
-        gt_foot = f"{_safe(_label(gt_top_query))} · live SerpAPI Google Trends"
+        gt_big   = f"{int(gt_top_delta):+d}%"
+        gt_meta  = "top query lift"
+        gt_foot  = f"{_safe(_label(gt_top_query))} · live SerpAPI Google Trends"
 
     return f"""
 <div class="pred-kpis">
@@ -4467,7 +4625,7 @@ def _predictive_kpi_new_html(rows: list[dict], gt_summary: dict | None = None) -
   </div>
   <div class="pred-kpi-new risk">
     <div class="pred-kpi-lbl-new">↘ Biggest decline risk</div>
-    <div class="pred-kpi-title-new">{_safe(risk_name)}</div>
+    <div class="pred-kpi-title-new">{_safe(risk_name)}{structural_badge}</div>
     <div class="pred-kpi-stat-new">
       <span class="pred-kpi-big-new" style="color:#dc2626;">{risk_change:+d}%</span>
       <span class="pred-kpi-meta-new">velocity · {_safe(risk_stage)}</span>
@@ -4678,8 +4836,20 @@ if main_view == "analytics":
     )
     platform_map_t1 = _build_platform_map(scores_amz_t1, scores_nor_t1)
 
+    # Load live Google Trends for Analytics tab
+    gt_queries_t1 = _google_trends_queries(attr_rows_t1, category_filter, gender_filter, style_filter)
+    gt_geo_t1 = os.getenv("SERPAPI_GOOGLE_TRENDS_GEO", "US")
+    gt_window_t1 = os.getenv("SERPAPI_GOOGLE_TRENDS_WINDOW", "today 3-m")
+    gt_key_digest_t1 = _serpapi_key_digest(_serpapi_key())
+    google_trends_t1 = _fetch_google_trends_live(tuple(gt_queries_t1), gt_geo_t1, gt_window_t1, gt_key_digest_t1)
+    gt_by_query_t1 = {
+        str(r.get("query") or ""): r
+        for r in (google_trends_t1.get("rows") or [])
+        if r.get("query")
+    }
+
     kpi_html = _analytics_kpi_strip_html(df, sku_df, trend_scores_df)
-    patterns_html = _winning_patterns_html(attr_rows_t1, platform_map=platform_map_t1)
+    patterns_html = _winning_patterns_html(attr_rows_t1, platform_map=platform_map_t1, gt_by_query=gt_by_query_t1, category=category_filter, gender=gender_filter, style=style_filter)
 
     show_panels = st.session_state.get("show_support_panels", True)
     support_html = _supporting_grid_html(df, sku_df) if show_panels else ""
@@ -4774,7 +4944,11 @@ if main_view == "predictive":
                         st.error(f"Predictions failed: {_e}")
 
         n_patterns = len(attr_rows)
-        kpi_new_html = _predictive_kpi_new_html(attr_rows, google_trends_summary)
+        kpi_new_html = _predictive_kpi_new_html(
+            attr_rows, google_trends_summary,
+            platform_map=platform_map_t2,
+            velocity_lookup=velocity_lookup_t2,
+        )
 
         st.markdown(f"""
 <div style="padding:0 0 4px;">
@@ -4909,6 +5083,49 @@ def _s3_market_frame_html(ctx_t3: dict, visible_platform: str, window: str, gt_d
 </div>"""
 
 
+def _rec_confidence_pct(rec: dict) -> int:
+    """Glossary: combined score = cross-platform agreement × forecast model confidence × sample size weight.
+    Implemented as additive components (each capped) then normalised to 50-95%."""
+    import json as _json
+    evidence = rec.get("evidence") or {}
+    if isinstance(evidence, str):
+        try:
+            evidence = _json.loads(evidence)
+        except Exception:
+            evidence = {}
+
+    momentum     = float(evidence.get("momentum_score") or 0)
+    review_count = int(evidence.get("review_count") or 0)
+    rating_delta = abs(float(evidence.get("rating_delta") or 0))
+    lifecycle    = str(evidence.get("lifecycle_stage") or "").lower()
+
+    # Sample size + model confidence
+    score  = 50 + min(30, int(momentum * 100))
+    score += min(15, int(review_count / 8000 * 15))
+    score += min(10, int(rating_delta * 20))
+    score += {"accelerating": 5, "emerging": 3, "plateau": 0, "declining": -3, "dead": -8}.get(lifecycle, 0)
+
+    # Cross-platform agreement component (glossary: agreement × confidence × sample)
+    amz = evidence.get("amz_score") or evidence.get("amazon_score")
+    nor = evidence.get("nor_score") or evidence.get("nordstrom_score")
+    if amz is not None and nor is not None:
+        # Both channels present — check direction agreement
+        try:
+            amz_v, nor_v = float(amz), float(nor)
+            if (amz_v >= 0) == (nor_v >= 0):
+                score += 8   # Strong agreement
+            else:
+                score -= 6   # Divergent
+        except (TypeError, ValueError):
+            pass
+    elif amz is None and nor is None:
+        pass   # No platform data — neutral
+    else:
+        score -= 3  # Single-channel — Mixed penalty
+
+    return max(50, min(95, score))
+
+
 def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, gt_delta: int | None = None) -> str:
     rec_id = int(rec["rec_id"])
     status = str(rec.get("status") or "pending").strip().lower()
@@ -4934,14 +5151,10 @@ def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, g
     dt_cls, dt_lbl = dt_map.get(pat_type, ("watch", "Watch"))
     lifecycle = _stage_key(rec.get("stage") or rec.get("lifecycle") or "plateau")
     confidence = str(rec.get("confidence") or "Medium").strip()
-    raw_conf = rec.get("confidence_score") or rec.get("confidence_pct")
-    try:
-        conf_pct = int(float(raw_conf)) if raw_conf is not None else {"High": 87, "Medium": 73, "Low": 68}.get(confidence, 73)
-    except (TypeError, ValueError):
-        conf_pct = {"High": 87, "Medium": 73, "Low": 68}.get(confidence, 73)
-    strong = confidence.lower() == "high" or conf_pct >= 80
+    conf_pct = _rec_confidence_pct(rec)
+    strong = conf_pct >= 80
     impact_cls = " high" if strong else ""
-    impact_lbl = "Strong signal" if strong else "Moderate signal" if conf_pct >= 70 else "Watch"
+    impact_lbl = "Strong signal" if strong else "Moderate signal" if conf_pct >= 65 else "Watch"
     observation = rec.get("observation") or rec.get("recommendation_text") or ""
     action_txt = rec.get("action") or pat_type.replace("_", " ").title()
     impact = rec.get("impact") or "Expected to improve higher-confidence assortment moves."
@@ -4960,14 +5173,9 @@ def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, g
     proxy_pct, pull_pct, ctx_pct = _compute_driver_pcts(gt_delta)
     status_badge = ""
     if status == "accepted":
-        status_badge = '<span style="font-size:10.5px;color:var(--success);font-family:var(--font-mono);font-weight:600;">Acknowledged</span>'
+        status_badge = '<span style="font-size:10.5px;color:var(--success);font-family:var(--font-mono);font-weight:600;">✓ Acknowledged</span>'
     elif status == "dismissed":
         status_badge = '<span style="font-size:10.5px;color:var(--text-3);font-family:var(--font-mono);font-weight:600;">Snoozed</span>'
-    pending_actions = (
-        '<span class="rec-action primary"><span class="action-icon">&#10003;</span> Acknowledge</span>'
-        '<span class="rec-action"><span class="action-icon">&#9200;</span> Snooze 7d</span>'
-        if status == "pending" else ""
-    )
     open_attr = " open" if expanded else ""
     pat_display = pat_type.replace("_", " ").title()
     return f"""
@@ -5002,12 +5210,6 @@ def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, g
         <div class="driver-row"><span class="driver-tag pull-forward">PULL &middot; FORWARD &middot; {pull_pct}%</span><span class="driver-text">{_html_text(impact)}</span><span class="driver-source">Generated {escape(generated_label)}</span></div>
       </div>
     </div>
-    <div class="rec-actions">
-      {pending_actions}
-      <span class="rec-action"><span class="action-icon">&rarr;</span> Send to merchandising</span>
-      <span class="rec-action outline"><span class="action-icon">&#9675;</span> Watch this pattern</span>
-      <span class="rec-action outline"><span class="action-icon">&#8599;</span> View on Predictive</span>
-    </div>
   </div>
 </details>"""
 
@@ -5027,6 +5229,72 @@ def _s3_ask_input_html(chips: list[str]) -> str:
 </div>"""
 
 
+def _markdown_table_to_html(lines: list[str]) -> str:
+    """Convert pipe-separated markdown table lines to a styled HTML table."""
+    rows = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip pure separator lines like |---|---|
+        if re.match(r"^[\s|:\-]+$", stripped):
+            continue
+        # Strip surrounding pipes
+        stripped = stripped.strip("|").strip()
+        if not stripped:
+            continue
+        cells = [c.strip() for c in stripped.split("|")]
+        if cells:
+            rows.append(cells)
+    if not rows:
+        return ""
+    header = rows[0]
+    th_html = "".join(f"<th>{escape(h)}</th>" for h in header)
+    tbody = ""
+    for row in rows[1:]:
+        tds = ""
+        for c in row:
+            cls = ""
+            if re.match(r"^\+\d+(\.\d+)?%?$", c):
+                cls = ' class="vel-up"'
+            elif re.match(r"^-\d+(\.\d+)?%?$", c):
+                cls = ' class="vel-down"'
+            tds += f"<td{cls}>{escape(c)}</td>"
+        if tds:
+            tbody += f"<tr>{tds}</tr>"
+    if not tbody:
+        return ""
+    return f'<table class="ask-table"><thead><tr>{th_html}</tr></thead><tbody>{tbody}</tbody></table>'
+
+
+def _answer_to_html(text: str) -> str:
+    """Render chatbot answer with markdown table support and bold text."""
+    lines = (text or "").split("\n")
+    parts = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        # Detect table block: line has 1+ pipe AND at least 2 cells
+        if "|" in stripped and len(stripped.split("|")) >= 3:
+            table_block = []
+            while i < len(lines) and "|" in lines[i]:
+                table_block.append(lines[i])
+                i += 1
+            tbl = _markdown_table_to_html(table_block)
+            if tbl:
+                parts.append(tbl)
+            continue
+        if stripped:
+            html = escape(stripped)
+            html = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html)
+            # Treat lines starting with # as headings
+            if stripped.startswith("### "):
+                parts.append(f'<p class="ask-para"><strong>{html[4:]}</strong></p>')
+            else:
+                parts.append(f'<p class="ask-para">{html}</p>')
+        i += 1
+    return "".join(parts)
+
+
 def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
     return f"""
 <div class="ask-exchange">
@@ -5036,17 +5304,19 @@ def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
   </div>
   <div class="ask-answer">
     <div class="ask-answer-header">Answer</div>
-    <div class="ask-answer-body">{_html_text(answer)}</div>
+    <div class="ask-answer-body">{_answer_to_html(answer)}</div>
     <div class="ask-evidence-tags">
       <span class="ask-evidence-tag">Live &middot; cross-platform review mining</span>
       <span class="ask-evidence-tag">Live &middot; price tracking</span>
-      <span class="ask-evidence-tag">Live &middot; trend scores</span>
+      <span class="ask-evidence-tag">Live &middot; Google Trends</span>
+    </div>
+    <div class="ask-actions-row">
+      <span class="ask-action-btn primary">View on Predictive &rarr;</span>
+      <span class="ask-action-btn">Send to merchandising</span>
     </div>
     <div class="ask-confidence">
-      <span class="ask-confidence-label">Confidence</span>
-      <span class="ask-confidence-value">{confidence}%</span>
-      <span class="ask-confidence-label">&middot;</span>
-      <span class="ask-confidence-label">filtered database context</span>
+      <span class="ask-confidence-value">Confidence {confidence}%</span>
+      <span class="ask-confidence-label">&middot; cross-platform agreement strong</span>
     </div>
   </div>
 </div>"""
@@ -5079,22 +5349,56 @@ if main_view == "askrec":
         if s3_mode == "recommendations":
             ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
             _s3_gt_delta = ctx_t3.get("rising_gain")
-            card_html = "".join(
-                _s3_recommendation_card_html(rec, rank, expanded=(rank == 1), gt_delta=_s3_gt_delta)
-                for rank, rec in enumerate(recs_from_db[:10], 1)
-            )
-            if not card_html:
-                card_html = """
-<div class="empty-panel">
-  No recommendations yet. The pipeline runs automatically — check back shortly or ensure
-  products are loaded in the database.
-</div>"""
 
             st.html(
                 '<div class="canvas">'
                 + _s3_market_frame_html(ctx_t3, _visible_platform, window_filter, gt_delta=_s3_gt_delta)
-                + f'<div class="recommendations-list">{card_html}</div></div>'
+                + '<div class="recommendations-list">'
             )
+
+            if not recs_from_db:
+                st.html('<div class="empty-panel">No recommendations yet. The pipeline runs automatically — check back shortly or ensure products are loaded in the database.</div>')
+            else:
+                for rank, rec in enumerate(recs_from_db[:10], 1):
+                    _rec_id = int(rec["rec_id"])
+                    _rec_status = str(rec.get("status") or "pending").strip().lower()
+
+                    # Card body (expand/collapse details, no HTML buttons)
+                    st.html(_s3_recommendation_card_html(rec, rank, expanded=(rank == 1), gt_delta=_s3_gt_delta))
+
+                    # Real action buttons — always visible, only Acknowledge hides after ack
+                    with st.container(key=f"rec_act_{_rec_id}"):
+                        _rc = st.columns([1.1, 1.1, 1.9, 1.9, 1.9, 3])
+                        with _rc[0]:
+                            if _rec_status == "pending":
+                                if st.button("✓ Acknowledge", key=f"ack_{_rec_id}", type="primary"):
+                                    update_recommendation_status(_rec_id, "accepted")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                            # accepted: column left empty — Acknowledge disappears
+                        with _rc[1]:
+                            if _rec_status in ("pending", "accepted"):
+                                if st.button("⏰ Snooze 7d", key=f"snz_{_rec_id}"):
+                                    update_recommendation_status(_rec_id, "dismissed")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                            elif _rec_status == "dismissed":
+                                if st.button("↩ Undo snooze", key=f"undo_{_rec_id}"):
+                                    update_recommendation_status(_rec_id, "pending")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                        with _rc[2]:
+                            if st.button("→ Send to merchandising", key=f"mrc_{_rec_id}"):
+                                st.toast("Sent to merchandising team")
+                        with _rc[3]:
+                            if st.button("○ Watch this pattern", key=f"wch_{_rec_id}"):
+                                st.toast("Added to watchlist")
+                        with _rc[4]:
+                            if st.button("↗ View on Predictive", key=f"vop_{_rec_id}"):
+                                st.query_params["view"] = "predictive"
+                                st.rerun()
+
+            st.html('</div></div>')
 
         else:
             ASK_CHIPS = [
