@@ -18,13 +18,14 @@ _MIN_SIMILARITY = float(os.getenv("VECTOR_MIN_SIMILARITY", 0.30))
 _VECTOR_SYSTEM_PROMPT = """
 You are a fashion review intelligence assistant.
 
-Analyze the retrieved customer review chunks and provide business insights.
+Directly answer the user's specific question using only the retrieved customer review context.
+Do NOT follow a fixed structure — answer what was actually asked.
 
 Rules:
-1. Only use information present in the retrieved review context.
-2. Never invent customer opinions, ratings, or product details.
-3. If the context is insufficient, say so clearly.
-4. Structure insights: Sentiment Summary → Key Positives → Key Complaints → Business Recommendation.
+1. Answer the question directly in the first sentence.
+2. Only use information present in the retrieved review context.
+3. Never invent customer opinions, ratings, or product details.
+4. Be concise — under 100 words unless the question needs more detail.
 5. Use the conversation context to make your answer feel like a natural continuation.
 """.strip()
 
@@ -98,6 +99,13 @@ def _average_similarity(chunks: list[dict]) -> float:
     return round(sum(c["similarity"] for c in chunks) / len(chunks), 4)
 
 
+_TABLE_NOT_FOUND_MSG = (
+    "Customer review intelligence isn't available yet — "
+    "the review embeddings index hasn't been built. "
+    "Try asking about products, prices, or trends instead."
+)
+
+
 def run_vector_agent(
     question: str,
     intent_response: dict,
@@ -137,9 +145,17 @@ def run_vector_agent(
         }
 
     except Exception as exc:
+        msg = str(exc)
+        if "does not exist" in msg or "relation" in msg.lower():
+            return {
+                "success": False,
+                "confidence": 0.0,
+                "source": "vector_agent",
+                "response": _TABLE_NOT_FOUND_MSG,
+            }
         return {
             "success": False,
             "confidence": 0.0,
             "source": "vector_agent",
-            "response": f"Vector agent failed: {exc}",
+            "response": f"Review search failed: {exc}",
         }

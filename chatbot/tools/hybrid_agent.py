@@ -91,7 +91,14 @@ def run_hybrid_agent(
     try:
         query = _generate_sql(question, chat_history)
         if _validate_sql(query):
-            sql_data = _execute_sql(query)
+            try:
+                sql_data = _execute_sql(query)
+            except Exception as sql_err:
+                # Retry once with error feedback
+                from tools.sql_agent import _generate_sql as _gen
+                query = _gen(question, chat_history, error_feedback=str(sql_err))
+                if _validate_sql(query):
+                    sql_data = _execute_sql(query)
             sql_query = query
             sql_success = True
     except Exception as exc:
@@ -105,7 +112,9 @@ def run_hybrid_agent(
             min_similarity=_MIN_SIM_HYBRID,
         )
     except Exception as exc:
-        print(f"[hybrid_agent] Vector component failed: {exc}")
+        # Silently skip if embeddings table doesn't exist yet
+        if "does not exist" not in str(exc) and "relation" not in str(exc).lower():
+            print(f"[hybrid_agent] Vector component failed: {exc}")
 
     if not sql_success and not vector_chunks:
         return {
@@ -113,8 +122,20 @@ def run_hybrid_agent(
             "confidence": 0.0,
             "source": "hybrid_agent",
             "response": (
-                "I couldn't retrieve product or review data for that question. "
-                "Try rephrasing with specific attributes like color, category, or brand."
+                "No matching products found for those attributes in our database. "
+                "Try broader criteria — e.g. drop the color filter or use a different category."
+            ),
+        }
+
+    # If SQL returned results but no reviews, still answer from product data
+    if sql_success and not sql_data:
+        return {
+            "success": False,
+            "confidence": 0.0,
+            "source": "hybrid_agent",
+            "response": (
+                "No products matched those exact filters. "
+                "Try broadening the search — e.g. remove the color or fit constraint."
             ),
         }
 

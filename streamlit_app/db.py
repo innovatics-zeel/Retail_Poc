@@ -908,6 +908,167 @@ def load_whitespace_scores(platform: str = None, category: str = None) -> list[d
     )
 
 
+# ── Watched patterns ─────────────────────────────────────────────────────────
+
+def save_watched_pattern(
+    rec_id: int | None,
+    pattern_name: str,
+    attr_key: str = None,
+    category: str = None,
+    platform: str = None,
+    stage: str = None,
+    change_pct: float = None,
+    confidence: str = None,
+    action: str = None,
+    note: str = None,
+) -> int:
+    """Insert a watched pattern row and return the new id."""
+    db = _session()
+    try:
+        result = db.execute(
+            text("""
+                INSERT INTO watched_patterns
+                    (rec_id, pattern_name, attr_key, category, platform,
+                     stage, change_pct, confidence, action, note)
+                VALUES
+                    (:rec_id, :pattern_name, :attr_key, :category, :platform,
+                     :stage, :change_pct, :confidence, :action, :note)
+                RETURNING id
+            """),
+            {
+                "rec_id": rec_id,
+                "pattern_name": pattern_name,
+                "attr_key": attr_key,
+                "category": category,
+                "platform": platform,
+                "stage": stage,
+                "change_pct": change_pct,
+                "confidence": confidence,
+                "action": action,
+                "note": note,
+            },
+        )
+        db.commit()
+        return result.scalar()
+    finally:
+        db.close()
+
+
+def remove_watched_pattern(watch_id: int) -> None:
+    db = _session()
+    try:
+        db.execute(text("DELETE FROM watched_patterns WHERE id = :id"), {"id": watch_id})
+        db.commit()
+    finally:
+        db.close()
+
+
+def load_watched_patterns() -> list[dict]:
+    db = _session()
+    try:
+        rows = db.execute(
+            text("SELECT * FROM watched_patterns ORDER BY watched_at DESC")
+        ).mappings().fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+
+def snooze_watched_pattern(watch_id: int, days: int = 7) -> None:
+    db = _session()
+    try:
+        db.execute(
+            text("UPDATE watched_patterns SET snoozed_until = NOW() + :interval WHERE id = :id"),
+            {"interval": f"{days} days", "id": watch_id},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def unsnooze_watched_pattern(watch_id: int) -> None:
+    db = _session()
+    try:
+        db.execute(
+            text("UPDATE watched_patterns SET snoozed_until = NULL WHERE id = :id"),
+            {"id": watch_id},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+# ── Google Trend snapshots ────────────────────────────────────────────────────
+
+def save_google_trend_snapshots(
+    rows: list[dict],
+    geo: str,
+    date_window: str,
+    category: str = None,
+    platform: str = None,
+) -> None:
+    """Persist fetched Google Trends rows into google_trend_snapshots."""
+    if not rows:
+        return
+    # Skip rows with zero interest before hitting the DB
+    rows = [r for r in rows if int(r.get("score") or 0) > 0 or int(r.get("delta_pct") or 0) != 0]
+    if not rows:
+        return
+    db = _session()
+    try:
+        db.execute(
+            text("""
+                INSERT INTO google_trend_snapshots
+                    (query, geo, date_window, score, delta_pct, points, category, platform)
+                VALUES
+                    (:query, :geo, :date_window, :score, :delta_pct, :points, :category, :platform)
+            """),
+            [
+                {
+                    "query": str(r.get("query") or ""),
+                    "geo": geo,
+                    "date_window": date_window,
+                    "score": int(r.get("score") or 0),
+                    # Cap delta at ±999% — uncapped values (e.g. 4614%) are math artifacts from near-zero baselines
+                    "delta_pct": max(-999, min(999, int(r.get("delta_pct") or 0))),
+                    "points": int(r.get("points") or 0),
+                    "category": category,
+                    "platform": platform,
+                }
+                for r in rows
+            ],
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def load_google_trend_history(query: str = None, limit: int = 60) -> list[dict]:
+    """Load historical Google Trends snapshots, optionally filtered by query."""
+    db = _session()
+    try:
+        if query:
+            rows = db.execute(
+                text("""
+                    SELECT * FROM google_trend_snapshots
+                    WHERE query ILIKE :q
+                    ORDER BY fetched_at DESC LIMIT :limit
+                """),
+                {"q": f"%{query}%", "limit": limit},
+            ).mappings().fetchall()
+        else:
+            rows = db.execute(
+                text("""
+                    SELECT * FROM google_trend_snapshots
+                    ORDER BY fetched_at DESC LIMIT :limit
+                """),
+                {"limit": limit},
+            ).mappings().fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+
 def data_summary_for_llm(df: pd.DataFrame) -> str:
     if df.empty:
         return "No product data available."

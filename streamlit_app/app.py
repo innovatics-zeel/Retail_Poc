@@ -46,6 +46,9 @@ from streamlit_app.db import (
     load_review_velocity, load_variant_skus,
     load_review_velocity_forecast, load_price_band_momentum, load_whitespace_scores,
     load_filter_options, lookup_sku, load_category_week_delta,
+    save_watched_pattern, remove_watched_pattern, load_watched_patterns,
+    snooze_watched_pattern, unsnooze_watched_pattern,
+    save_google_trend_snapshots,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -2007,6 +2010,17 @@ st.markdown(f"""
     .ask-action-btn {{ display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border:1px solid var(--border); border-radius:5px; font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; white-space:nowrap; }}
     .ask-action-btn.primary {{ color:var(--primary-deep); border-color:rgba(0,164,227,.3); }}
     .ask-action-btn:hover {{ border-color:var(--primary); color:var(--primary); }}
+    .ask-thinking {{ display:inline-flex; align-items:center; gap:5px; padding:4px 0; }}
+    .ask-thinking span {{
+        width:7px; height:7px; border-radius:50%; background:var(--primary);
+        animation: ask-pulse 1.3s ease-in-out infinite;
+    }}
+    .ask-thinking span:nth-child(2) {{ animation-delay:.2s; }}
+    .ask-thinking span:nth-child(3) {{ animation-delay:.4s; }}
+    @keyframes ask-pulse {{
+        0%, 80%, 100% {{ transform:scale(.6); opacity:.4; }}
+        40% {{ transform:scale(1); opacity:1; }}
+    }}
 
     .automation-left {{ display:flex; align-items:center; gap:14px; }}
     .automation-icon {{
@@ -2173,7 +2187,7 @@ def _sku_lookup_dialog():
         _sku_q = st.text_input("sku_q", placeholder="e.g., B08L5XYZ12 (Amazon ASIN) or 7234890 (Nordstrom ID)",
                                label_visibility="collapsed", key="sku_lookup_input")
     with _btn_col:
-        _do_lookup = st.button("Look up", type="primary", use_container_width=True, key="sku_lookup_go")
+        _do_lookup = st.button("Look up", type="primary", width="stretch", key="sku_lookup_go")
     st.markdown("""
 <div class="sku-try-row">
   <span style="font-size:11px;color:#94a3b8;align-self:center;">TRY</span>
@@ -2323,10 +2337,10 @@ with st.container(key="filter_area", gap="small"):
     with _r1[4]:
         st.markdown('<div class="filter-divider-v"></div>', unsafe_allow_html=True)
     with _r1[5]:
-        if st.button("🔍 Look up SKU", key="sku_open_btn", use_container_width=True):
+        if st.button("🔍 Look up SKU", key="sku_open_btn", width="stretch"):
             _sku_lookup_dialog()
     with _r1[6]:
-        if st.button("↗ Save view", key="save_view_btn", use_container_width=True, help="Save current filter as default"):
+        if st.button("↗ Save view", key="save_view_btn", width="stretch", help="Save current filter as default"):
             st.session_state["saved_view"] = {
                 "gender_filter": st.session_state.get("gender_filter", "All"),
                 "cat_filter":    st.session_state.get("cat_filter", "All"),
@@ -2338,7 +2352,7 @@ with st.container(key="filter_area", gap="small"):
             }
             st.toast("View saved", icon="✓")
     with _r1[7]:
-        if st.button("↺ Reset all", key="reset_all_btn", use_container_width=True, help="Clear all filters to defaults"):
+        if st.button("↺ Reset all", key="reset_all_btn", width="stretch", help="Clear all filters to defaults"):
             for _fkey in ["gender_filter", "cat_filter", "style_filter", "window_filter",
                           "price_band_filter", "region_filter", "plt_filter", "saved_view"]:
                 st.session_state.pop(_fkey, None)
@@ -2462,9 +2476,19 @@ def _money(value) -> str:
 
 # ── Chatbot helpers (Layer 02) ────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner=False)
-def _get_chatbot():
-    """Import and initialise the RAG orchestrator once per process."""
+@st.cache_resource(show_spinner=False, max_entries=1)
+def _get_chatbot(_cache_key: str = "v1"):
+    """Import and initialise the RAG orchestrator once. Change _cache_key to force reload."""
+    import sys as _sys
+    _chatbot_mods = [
+        "orchestrator", "intent_agent", "tool_manager", "llm_config",
+        "embedding_manager", "db",
+        "tools.sql_agent", "tools.trend_agent", "tools.vector_agent",
+        "tools.hybrid_agent", "tools.fallback_agent",
+        "utils.history", "utils.redis_cache",
+    ]
+    for _m in _chatbot_mods:
+        _sys.modules.pop(_m, None)
     try:
         from orchestrator import orchestrator as _orch
         from embedding_manager import setup_table
@@ -2524,7 +2548,7 @@ def _chat2_render_debug(debug: dict) -> None:
             if tool_response.get("query"):
                 st.code(tool_response["query"], language="sql")
             if data:
-                st.dataframe(pd.DataFrame(data), use_container_width=True)
+                st.dataframe(pd.DataFrame(data), width="stretch")
 
     elif source == "vector_agent":
         chunks = tool_response.get("data") or []
@@ -2548,7 +2572,7 @@ def _chat2_render_debug(debug: dict) -> None:
                 if sql_query:
                     st.code(sql_query, language="sql")
                 if sql_data:
-                    st.dataframe(pd.DataFrame(sql_data), use_container_width=True)
+                    st.dataframe(pd.DataFrame(sql_data), width="stretch")
         if vec_data:
             with st.expander(f"Customer Reviews · {len(vec_data)} chunks", expanded=False):
                 for c in vec_data:
@@ -2564,7 +2588,7 @@ def _chat2_render_debug(debug: dict) -> None:
         data = tool_response.get("data") or []
         if data:
             with st.expander("Trend Analytics Data", expanded=False):
-                st.dataframe(pd.DataFrame(data), use_container_width=True)
+                st.dataframe(pd.DataFrame(data), width="stretch")
 
 
 # Matches: $12.4M  $1,234  34.5%  1,234,567  2.5x  (outside code spans)
@@ -4847,6 +4871,14 @@ if main_view == "analytics":
         for r in (google_trends_t1.get("rows") or [])
         if r.get("query")
     }
+    _gt_t1_save_key = f"gt_saved_t1_{gt_key_digest_t1}_{category_filter}_{platform_filter}"
+    if google_trends_t1.get("status") == "ok" and not st.session_state.get(_gt_t1_save_key):
+        save_google_trend_snapshots(
+            google_trends_t1.get("rows", []), gt_geo_t1, gt_window_t1,
+            category=None if category_filter == "All" else category_filter,
+            platform=None if platform_filter == "All" else platform_filter,
+        )
+        st.session_state[_gt_t1_save_key] = True
 
     kpi_html = _analytics_kpi_strip_html(df, sku_df, trend_scores_df)
     patterns_html = _winning_patterns_html(attr_rows_t1, platform_map=platform_map_t1, gt_by_query=gt_by_query_t1, category=category_filter, gender=gender_filter, style=style_filter)
@@ -4928,11 +4960,19 @@ if main_view == "predictive":
             if google_trends_summary.get("status") == "ok"
             else "Google Trends is wired for SerpAPI; add SERPAPI_API_KEY in .env to enable live Pull-forward data."
         )
+        _gt_t2_save_key = f"gt_saved_t2_{gt_key_digest}_{category_filter}_{platform_filter}"
+        if google_trends.get("status") == "ok" and not st.session_state.get(_gt_t2_save_key):
+            save_google_trend_snapshots(
+                google_trends.get("rows", []), gt_geo, gt_window,
+                category=None if category_filter == "All" else category_filter,
+                platform=None if platform_filter == "All" else platform_filter,
+            )
+            st.session_state[_gt_t2_save_key] = True
 
         # Scope banner + run button row
         run_col, gap_col = st.columns([1, 5])
         with run_col:
-            if st.button("Run Predictions", type="primary", key="run_pred_btn", use_container_width=True):
+            if st.button("Run Predictions", type="primary", key="run_pred_btn", width="stretch"):
                 with st.spinner("Computing trend scores..."):
                     try:
                         from predictions.run_predictions import run as _run_pred
@@ -5042,9 +5082,12 @@ def _html_text(text: str) -> str:
     return html.replace("\n", "<br>")
 
 
-def _s3_mode_bar_html(current_mode: str, rec_count: int, fresh_label: str) -> str:
-    rec_active = " active" if current_mode == "recommendations" else ""
-    ask_active = " active" if current_mode == "ask" else ""
+def _s3_mode_bar_html(current_mode: str, rec_count: int, fresh_label: str,
+                      watch_count: int = 0) -> str:
+    rec_active   = " active" if current_mode == "recommendations" else ""
+    ask_active   = " active" if current_mode == "ask" else ""
+    watch_active = " active" if current_mode == "watchlist" else ""
+    watch_badge  = f' <span class="badge">{watch_count}</span>' if watch_count else ""
     return f"""
 <div class="mode-toggle-bar">
   <div class="mode-toggle">
@@ -5052,6 +5095,9 @@ def _s3_mode_bar_html(current_mode: str, rec_count: int, fresh_label: str) -> st
       Recommendations <span class="badge">{rec_count}</span>
     </a>
     <a class="mode-option{ask_active}" href="{_query_href(view='askrec', s3_mode='ask')}">Ask Innovatics</a>
+    <a class="mode-option{watch_active}" href="{_query_href(view='askrec', s3_mode='watchlist')}">
+      ★ Watchlist{watch_badge}
+    </a>
   </div>
   <div class="mode-meta">
     <span class="mode-meta-dot"></span>
@@ -5214,17 +5260,100 @@ def _s3_recommendation_card_html(rec: dict, rank: int, expanded: bool = False, g
 </details>"""
 
 
-def _s3_ask_input_html(chips: list[str]) -> str:
-    chips_html = "".join(f'<span class="ask-chip">{escape(c)}</span>' for c in chips)
-    return f"""
+@st.fragment
+def _render_rec_buttons(rec_id: int, rec: dict, init_status: str, init_watched: bool,
+                         watched_rec_ids: set):
+    """Fragment defined at module level so its ID is stable across loop iterations."""
+    _sk = f"rs_{rec_id}"
+    _wk = f"rw_{rec_id}"
+    if _sk not in st.session_state:
+        st.session_state[_sk] = init_status
+    if _wk not in st.session_state:
+        st.session_state[_wk] = init_watched
+    status     = st.session_state[_sk]
+    is_watched = st.session_state[_wk]
+
+    _rc = st.columns([1.1, 1.1, 1.9, 1.9, 1.9, 3])
+    with _rc[0]:
+        if status == "pending":
+            if st.button("✓ Acknowledge", key=f"ack_{rec_id}", type="primary"):
+                try:
+                    update_recommendation_status(rec_id, "accepted")
+                    st.session_state[_sk] = "accepted"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+    with _rc[1]:
+        if status in ("pending", "accepted"):
+            if st.button("⏰ Snooze 7d", key=f"snz_{rec_id}"):
+                try:
+                    update_recommendation_status(rec_id, "dismissed")
+                    st.session_state[_sk] = "dismissed"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+        elif status == "dismissed":
+            if st.button("↩ Undo snooze", key=f"undo_{rec_id}"):
+                try:
+                    update_recommendation_status(rec_id, "pending")
+                    st.session_state[_sk] = "pending"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+    with _rc[2]:
+        if st.button("→ Send to merchandising", key=f"mrc_{rec_id}"):
+            st.toast("Sent to merchandising team")
+    with _rc[3]:
+        if is_watched:
+            if st.button("★ Watching", key=f"wch_{rec_id}"):
+                try:
+                    watched = load_watched_patterns()
+                    w = next((x for x in watched if x.get("rec_id") == rec_id), None)
+                    if w:
+                        remove_watched_pattern(w["id"])
+                    st.session_state[_wk] = False
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+        else:
+            if st.button("○ Watch", key=f"wch_{rec_id}"):
+                try:
+                    _ev = rec.get("evidence") or {}
+                    if isinstance(_ev, str):
+                        try:
+                            import json as _j; _ev = _j.loads(_ev)
+                        except Exception:
+                            _ev = {}
+                    save_watched_pattern(
+                        rec_id=rec_id,
+                        pattern_name=rec.get("action") or rec.get("pattern_type") or "Pattern",
+                        attr_key=rec.get("pattern_type") or "",
+                        category=rec.get("category") or "",
+                        platform=str(rec.get("platform") or ""),
+                        stage=str(_ev.get("lifecycle_stage") or ""),
+                        change_pct=float(_ev.get("momentum_score") or 0) * 100 if _ev.get("momentum_score") else None,
+                        confidence=rec.get("confidence") or "",
+                        action=rec.get("action") or "",
+                    )
+                    st.session_state[_wk] = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+    with _rc[4]:
+        # Full app rerun for navigation — scope="app" exits the fragment
+        if st.button("↗ View on Predictive", key=f"vop_{rec_id}"):
+            st.session_state["rec_detail_id"] = rec_id
+            st.session_state["s3_mode"] = "rec_detail"
+            st.query_params["s3_mode"] = "rec_detail"
+            st.rerun(scope="app")
+
+
+def _s3_ask_input_html() -> str:
+    return """
 <div class="ask-input-panel">
   <div class="ask-input-header">
     <div class="ask-input-title">Ask Innovatics anything about this filter context</div>
     <div class="ask-input-subtitle">Grounded in your filtered data &middot; cross-platform marketplace signals, Google Trends, NOAA weather</div>
-  </div>
-  <div class="ask-suggestions">
-    <span class="ask-suggestions-label">Try</span>
-    {chips_html}
   </div>
 </div>"""
 
@@ -5252,12 +5381,14 @@ def _markdown_table_to_html(lines: list[str]) -> str:
     for row in rows[1:]:
         tds = ""
         for c in row:
+            # Strip markdown bold markers from cell content before rendering
+            clean = re.sub(r"\*\*([^*]*)\*\*", r"\1", c).strip()
             cls = ""
-            if re.match(r"^\+\d+(\.\d+)?%?$", c):
+            if re.match(r"^\+\d+(\.\d+)?%?$", clean):
                 cls = ' class="vel-up"'
-            elif re.match(r"^-\d+(\.\d+)?%?$", c):
+            elif re.match(r"^-\d+(\.\d+)?%?$", clean):
                 cls = ' class="vel-down"'
-            tds += f"<td{cls}>{escape(c)}</td>"
+            tds += f"<td{cls}>{escape(clean)}</td>"
         if tds:
             tbody += f"<tr>{tds}</tr>"
     if not tbody:
@@ -5296,15 +5427,13 @@ def _answer_to_html(text: str) -> str:
 
 
 def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
-    return f"""
-<div class="ask-exchange">
-  <div class="ask-question">
-    <div class="ask-question-icon">DB</div>
-    <div class="ask-question-text">{_safe(question)}</div>
-  </div>
-  <div class="ask-answer">
-    <div class="ask-answer-header">Answer</div>
-    <div class="ask-answer-body">{_answer_to_html(answer)}</div>
+    is_thinking = (answer == "Thinking...")
+    if is_thinking:
+        answer_body = '<div class="ask-thinking"><span></span><span></span><span></span></div>'
+        meta_html = ""
+    else:
+        answer_body = f'<div class="ask-answer-body">{_answer_to_html(answer)}</div>'
+        meta_html = f"""
     <div class="ask-evidence-tags">
       <span class="ask-evidence-tag">Live &middot; cross-platform review mining</span>
       <span class="ask-evidence-tag">Live &middot; price tracking</span>
@@ -5317,7 +5446,16 @@ def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
     <div class="ask-confidence">
       <span class="ask-confidence-value">Confidence {confidence}%</span>
       <span class="ask-confidence-label">&middot; cross-platform agreement strong</span>
-    </div>
+    </div>"""
+    return f"""
+<div class="ask-exchange">
+  <div class="ask-question">
+    <div class="ask-question-icon">DB</div>
+    <div class="ask-question-text">{_safe(question)}</div>
+  </div>
+  <div class="ask-answer">
+    <div class="ask-answer-header">{"Thinking" if is_thinking else "Answer"}</div>
+    {answer_body}{meta_html}
   </div>
 </div>"""
 
@@ -5341,10 +5479,13 @@ if main_view == "askrec":
         n_recs = len(recs_from_db)
 
         s3_mode = _query_value("s3_mode", st.session_state.get("s3_mode", "recommendations")).strip().lower()
-        if s3_mode not in {"recommendations", "ask"}:
+        if s3_mode not in {"recommendations", "ask", "watchlist", "rec_detail"}:
             s3_mode = "recommendations"
         st.session_state["s3_mode"] = s3_mode
-        st.html(_s3_mode_bar_html(s3_mode, n_recs, _fresh_label))
+
+        _watched_patterns_all = load_watched_patterns()
+        _watched_rec_ids = {w["rec_id"] for w in _watched_patterns_all if w.get("rec_id")}
+        st.html(_s3_mode_bar_html(s3_mode, n_recs, _fresh_label, watch_count=len(_watched_patterns_all)))
 
         if s3_mode == "recommendations":
             ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
@@ -5361,42 +5502,297 @@ if main_view == "askrec":
             else:
                 for rank, rec in enumerate(recs_from_db[:10], 1):
                     _rec_id = int(rec["rec_id"])
-                    _rec_status = str(rec.get("status") or "pending").strip().lower()
-
-                    # Card body (expand/collapse details, no HTML buttons)
                     st.html(_s3_recommendation_card_html(rec, rank, expanded=(rank == 1), gt_delta=_s3_gt_delta))
 
-                    # Real action buttons — always visible, only Acknowledge hides after ack
-                    with st.container(key=f"rec_act_{_rec_id}"):
-                        _rc = st.columns([1.1, 1.1, 1.9, 1.9, 1.9, 3])
-                        with _rc[0]:
-                            if _rec_status == "pending":
-                                if st.button("✓ Acknowledge", key=f"ack_{_rec_id}", type="primary"):
-                                    update_recommendation_status(_rec_id, "accepted")
-                                    st.cache_data.clear()
+                    _render_rec_buttons(
+                        rec_id=_rec_id,
+                        rec=rec,
+                        init_status=str(rec.get("status") or "pending").strip().lower(),
+                        init_watched=_rec_id in _watched_rec_ids,
+                        watched_rec_ids=_watched_rec_ids,
+                    )
+
+            st.html('</div></div>')
+
+        elif s3_mode == "rec_detail":
+            _detail_rec_id = st.session_state.get("rec_detail_id")
+            _detail_rec = next((r for r in recs_from_db if int(r["rec_id"]) == _detail_rec_id), None) if _detail_rec_id else None
+
+            # ── Back button ──────────────────────────────────────────────────
+            if st.button("← Back to Recommendations", key="rec_detail_back"):
+                st.session_state["s3_mode"] = "recommendations"
+                st.query_params["s3_mode"] = "recommendations"
+                st.rerun()
+
+            if not _detail_rec:
+                st.warning("Recommendation not found. It may have been removed.")
+            else:
+                import json as _dj
+                _dev = _detail_rec.get("evidence") or {}
+                if isinstance(_dev, str):
+                    try: _dev = _dj.loads(_dev)
+                    except Exception: _dev = {}
+
+                _dcat   = _detail_rec.get("category") or ""
+                _dplat  = _detail_rec.get("platform") or ""
+                _dtype  = _detail_rec.get("pattern_type") or ""
+                _dstage = str(_dev.get("lifecycle_stage") or "plateau")
+                _dmom   = float(_dev.get("momentum_score") or 0)
+                _dconf  = _detail_rec.get("confidence") or "Medium"
+                _dact   = _detail_rec.get("action") or ""
+                _dobs   = _detail_rec.get("observation") or _detail_rec.get("recommendation_text") or ""
+                _dimp   = _detail_rec.get("impact") or ""
+                _dstage_lbl = _LIFECYCLE_LABELS.get(_stage_key(_dstage), _dstage.title())
+                _dstage_cls = _stage_key(_dstage)
+                _dchg   = int(round(_dmom * 100))
+                _dchg_col = SUCCESS if _dchg >= 0 else DANGER
+
+                # ── Hero strip ────────────────────────────────────────────────
+                st.html(f"""
+<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;margin:0 0 16px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span class="lifecycle-pill {_dstage_cls}">{escape(_dstage_lbl)}</span>
+        <span style="font-size:11px;color:#94a3b8;font-family:var(--font-mono);">{escape(_dtype.replace("_"," ").title())}</span>
+        <span style="font-size:11px;color:#94a3b8;">· {escape(_dcat.replace("_"," ").title())}</span>
+        {f'<span style="font-size:11px;color:#94a3b8;">· {escape(str(_dplat))}</span>' if _dplat else ""}
+      </div>
+      <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:6px;">{_safe(_dact)}</div>
+      <div style="font-size:13px;color:#475569;line-height:1.55;">{_safe(_dobs)}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:28px;font-weight:900;color:{_dchg_col};">{_dchg:+d}%</div>
+      <div style="font-size:11px;color:#94a3b8;">momentum</div>
+      <div style="font-size:12px;font-weight:600;color:#0f172a;margin-top:6px;">{escape(_dconf)} confidence</div>
+    </div>
+  </div>
+  {f'<div style="margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9;font-size:12.5px;color:#64748b;"><strong>Expected impact:</strong> {_safe(_dimp)}</div>' if _dimp else ""}
+</div>""")
+
+                # "amazon vs nordstrom" → "amazon" (trend_scores only has single-platform rows)
+                _dplat_raw = str(_dplat).split("·")[0].strip().lower()
+                _dplat_clean = _dplat_raw.split(" vs ")[0].strip() if _dplat_raw else None
+
+                # ── Live trend scores — by category+platform, no attr_key filter ──
+                # pattern_type ("declining_attribute") ≠ attr_key ("material","fit"…)
+                _detail_ts = load_trend_scores(
+                    category=None if _dcat in ("", "All") else _dcat,
+                    platform=None if not _dplat_clean else _dplat_clean,
+                )
+
+                # ── Velocity forecast ─────────────────────────────────────────
+                _detail_vel = load_review_velocity_forecast(
+                    platform=None if not _dplat_clean else _dplat_clean,
+                    category=None if _dcat in ("", "All") else _dcat,
+                )
+
+                # ── Google Trends history — filter by category keyword, fallback to all ─
+                # "mens_tshirts" → "men", "womens_dresses" → "women" (stored queries use "men"/"women")
+                from streamlit_app.db import load_google_trend_history
+                _gt_kw_raw = _dcat.replace("_", " ").split()[0] if _dcat else ""
+                _gt_category_kw = _gt_kw_raw[:-1] if _gt_kw_raw.endswith("s") and len(_gt_kw_raw) > 3 else _gt_kw_raw
+                _gt_hist_cat = load_google_trend_history(query=_gt_category_kw, limit=30) if _gt_category_kw else []
+                _gt_hist_cat_active = [r for r in _gt_hist_cat if int(r.get("score") or 0) > 0 or int(r.get("delta_pct") or 0) != 0]
+                # If category-specific results are all zero, broaden to all recent trends
+                if _gt_hist_cat_active:
+                    _gt_hist = _gt_hist_cat_active
+                    _gt_hist_label = "This Pattern"
+                else:
+                    _gt_hist = [r for r in load_google_trend_history(limit=30) if int(r.get("score") or 0) > 0 or int(r.get("delta_pct") or 0) != 0]
+                    _gt_hist_label = "All Categories (no category-specific signal yet)"
+
+                _dcol1, _dcol2 = st.columns([1.4, 1])
+
+                with _dcol1:
+                    st.markdown("**Trend Score · This Pattern**")
+                    if not _detail_ts.empty:
+                        _ts_disp = _detail_ts[["attr_key", "attr_value", "momentum_score",
+                                               "trend_direction", "lifecycle_stage", "review_growth_pct"]].copy()
+                        _ts_disp.columns = ["Attr", "Value", "Momentum", "Direction", "Stage", "Review Δ%"]
+                        st.dataframe(_ts_disp.head(8), width="stretch", hide_index=True)
+                    else:
+                        st.caption("No trend scores yet for this pattern — run predictions.")
+
+                    st.markdown("**Review Velocity Forecast**")
+                    if _detail_vel:
+                        _vel_df = pd.DataFrame(_detail_vel)[["name", "current_reviews",
+                                                              "actual_change_pct", "projected_change_pct", "confidence"]]
+                        _vel_df.columns = ["Scope", "Current Reviews", "Actual Δ%", "Forecast Δ%", "Confidence"]
+                        st.dataframe(_vel_df.head(6), width="stretch", hide_index=True)
+
+                        _best = _detail_vel[0]
+                        _hist = _best.get("hist_vals", [])
+                        _fcast = _best.get("future_vals", [])
+                        if _hist:
+                            _chart_df = pd.DataFrame({
+                                "period": [f"-{len(_hist)-i}d" for i in range(len(_hist))] + [f"+{i+1}d" for i in range(min(14, len(_fcast)))],
+                                "reviews": _hist + _fcast[:14],
+                                "type": ["Actual"] * len(_hist) + ["Forecast"] * min(14, len(_fcast)),
+                            })
+                            fig = px.line(_chart_df, x="period", y="reviews", color="type",
+                                          color_discrete_map={"Actual": ACCENT, "Forecast": WARNING},
+                                          title="Review velocity · actual + 14d forecast")
+                            fig.update_layout(height=220, margin=dict(t=32, b=0, l=0, r=0),
+                                              paper_bgcolor="white", plot_bgcolor="white",
+                                              legend_title_text="", font_size=11)
+                            st.plotly_chart(fig, width="stretch")
+                    else:
+                        st.caption("No velocity data yet.")
+
+                with _dcol2:
+                    st.markdown(f"**Google Trends History · {_gt_hist_label}**")
+                    if _gt_hist:
+                        _gh_df = pd.DataFrame(_gt_hist)[["query", "delta_pct", "score", "fetched_at"]].copy()
+                        _gh_df["fetched_at"] = pd.to_datetime(_gh_df["fetched_at"]).dt.strftime("%b %-d %H:%M")
+                        _gh_df["delta_pct"] = _gh_df["delta_pct"].clip(-999, 999)
+                        _gh_df.columns = ["Query", "Δ%", "Score", "Fetched"]
+                        st.dataframe(_gh_df.head(10), width="stretch", hide_index=True)
+
+                        _gt_series = (
+                            pd.DataFrame(_gt_hist)
+                            .assign(fetched_at=lambda d: pd.to_datetime(d["fetched_at"]))
+                            .assign(delta_pct=lambda d: d["delta_pct"].clip(-999, 999))
+                            .sort_values("fetched_at")
+                            .groupby("fetched_at")[["delta_pct", "score"]].mean()
+                            .reset_index()
+                        )
+                        if len(_gt_series) > 1:
+                            fig2 = px.line(_gt_series, x="fetched_at", y="delta_pct",
+                                           title="Google Trends Δ% over time",
+                                           labels={"fetched_at": "", "delta_pct": "Δ%"})
+                            fig2.update_layout(height=200, margin=dict(t=32, b=0, l=0, r=0),
+                                               paper_bgcolor="white", plot_bgcolor="white", font_size=11)
+                            fig2.add_hline(y=20, line_dash="dot", line_color=WARNING,
+                                           annotation_text="signal threshold")
+                            st.plotly_chart(fig2, width="stretch")
+                    else:
+                        st.caption("No Google Trends history yet. Trends data is saved when you visit Analytics or Predictive tabs with SERPAPI_API_KEY set.")
+
+                    st.markdown("**Evidence Summary**")
+                    if _dev:
+                        for _ek, _ev2 in _dev.items():
+                            if _ev2 is not None and str(_ev2).strip():
+                                st.markdown(f"- **{_ek.replace('_',' ').title()}**: {_ev2}")
+                    else:
+                        st.caption("No structured evidence available.")
+
+        elif s3_mode == "watchlist":
+            _now_utc = pd.Timestamp.now(tz="UTC")
+
+            def _wp_is_snoozed(wp: dict) -> bool:
+                su = wp.get("snoozed_until")
+                if su is None:
+                    return False
+                try:
+                    su_ts = pd.to_datetime(su, utc=True)
+                    return su_ts > _now_utc
+                except Exception:
+                    return False
+
+            _active_wp  = [w for w in _watched_patterns_all if not _wp_is_snoozed(w)]
+            _snoozed_wp = [w for w in _watched_patterns_all if _wp_is_snoozed(w)]
+
+            st.html('<div class="canvas"><div class="recommendations-list">')
+            if not _watched_patterns_all:
+                st.html("""
+<div class="empty-panel" style="padding:32px 24px;text-align:center;">
+  <div style="font-size:2rem;margin-bottom:10px;">★</div>
+  <div style="font-size:15px;font-weight:600;color:#0f172a;">No watched patterns yet</div>
+  <div style="font-size:13px;color:#94a3b8;margin-top:6px;">
+    Click <strong>○ Watch</strong> on any recommendation to bookmark it here.
+  </div>
+</div>""")
+            else:
+                def _render_wp_section(items: list[dict], label: str, is_snoozed_section: bool):
+                    if not items:
+                        return
+                    st.html(f"""
+<div style="padding:16px 20px 8px;display:flex;align-items:center;gap:10px;">
+  <div style="font-size:13px;font-weight:700;color:{'#94a3b8' if is_snoozed_section else '#0f172a'};">
+    {"⏰ Snoozed" if is_snoozed_section else "★ Watching"} &nbsp;<span style="font-size:11.5px;font-weight:500;
+      background:#f1f5f9;border-radius:20px;padding:2px 9px;color:#64748b;">{len(items)}</span>
+  </div>
+</div>""")
+                    for _wp in items:
+                        _wp_id     = int(_wp["id"])
+                        _wp_name   = str(_wp.get("pattern_name") or "Pattern")
+                        _wp_attr   = str(_wp.get("attr_key") or "").replace("_", " ").title()
+                        _wp_cat    = str(_wp.get("category") or "").replace("_", " ").title()
+                        _wp_plat   = str(_wp.get("platform") or "")
+                        _wp_stage  = str(_wp.get("stage") or "plateau")
+                        _wp_conf   = str(_wp.get("confidence") or "")
+                        _wp_action = str(_wp.get("action") or "")
+                        _wp_chg    = _wp.get("change_pct")
+                        _wp_chg_str = f"{float(_wp_chg):+.0f}%" if _wp_chg is not None else "--"
+                        _wp_chg_col = "#20a464" if (_wp_chg or 0) >= 0 else "#e5393f"
+                        try:
+                            _wp_date = pd.to_datetime(_wp.get("watched_at")).strftime("%b %-d, %Y")
+                        except Exception:
+                            _wp_date = "recently"
+                        _wp_stage_disp = _LIFECYCLE_LABELS.get(_stage_key(_wp_stage), _wp_stage.title())
+                        _wp_stage_cls  = _stage_key(_wp_stage)
+                        _snz_badge = ""
+                        if is_snoozed_section:
+                            try:
+                                _su = pd.to_datetime(_wp.get("snoozed_until"), utc=True)
+                                _snz_badge = f'<span style="font-size:10.5px;background:#fef9c3;color:#a16207;border-radius:4px;padding:1px 7px;font-weight:600;">snoozed until {escape(_su.strftime("%b %-d"))}</span>'
+                            except Exception:
+                                _snz_badge = '<span style="font-size:10.5px;color:#a16207;">snoozed</span>'
+                        _card_bg  = "#fafafa" if is_snoozed_section else "#fff"
+                        _card_bdr = "#e2e8f0"
+                        _name_col = "#94a3b8" if is_snoozed_section else "#0f172a"
+                        st.html(f"""
+<div style="border:1px solid {_card_bdr};border-radius:10px;padding:16px 20px;
+            margin:0 20px 12px;background:{_card_bg};display:flex;
+            align-items:flex-start;justify-content:space-between;gap:16px;">
+  <div style="flex:1;min-width:0;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      <span class="lifecycle-pill {_wp_stage_cls}" style="font-size:10px;">{escape(_wp_stage_disp)}</span>
+      {_snz_badge}
+      <span style="font-size:10.5px;color:#94a3b8;font-family:var(--font-mono);">{escape(_wp_attr)}</span>
+      <span style="font-size:10.5px;color:#94a3b8;">·</span>
+      <span style="font-size:10.5px;color:#94a3b8;">{escape(_wp_cat)}</span>
+      {f'<span style="font-size:10.5px;color:#94a3b8;">· {escape(_wp_plat)}</span>' if _wp_plat else ""}
+    </div>
+    <div style="font-size:14px;font-weight:600;color:{_name_col};margin-bottom:4px;">{_safe(_wp_name)}</div>
+    {f'<div style="font-size:12px;color:#64748b;margin-bottom:4px;">{_safe(_wp_action)}</div>' if _wp_action and _wp_action != _wp_name else ""}
+    <div style="font-size:11px;color:#94a3b8;">Watched {escape(_wp_date)}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:20px;font-weight:800;color:{_wp_chg_col};">{escape(_wp_chg_str)}</div>
+    {f'<div style="font-size:11px;color:#94a3b8;">{escape(_wp_conf)} confidence</div>' if _wp_conf else ""}
+  </div>
+</div>""")
+                        _wp_act_key = f"wp_action_{_wp_id}"
+                        if st.session_state.get(_wp_act_key):
+                            _wp_pending = st.session_state.pop(_wp_act_key)
+                            try:
+                                if _wp_pending == "snooze":
+                                    snooze_watched_pattern(_wp_id, days=7)
+                                elif _wp_pending == "unsnooze":
+                                    unsnooze_watched_pattern(_wp_id)
+                                elif _wp_pending == "remove":
+                                    remove_watched_pattern(_wp_id)
+                            except Exception as _wp_err:
+                                st.error(f"Action failed: {_wp_err}")
+                        _wpc = st.columns([1.3, 1.3, 6])
+                        with _wpc[0]:
+                            if is_snoozed_section:
+                                if st.button("↩ Undo snooze", key=f"wp_undo_{_wp_id}"):
+                                    st.session_state[_wp_act_key] = "unsnooze"
                                     st.rerun()
-                            # accepted: column left empty — Acknowledge disappears
-                        with _rc[1]:
-                            if _rec_status in ("pending", "accepted"):
-                                if st.button("⏰ Snooze 7d", key=f"snz_{_rec_id}"):
-                                    update_recommendation_status(_rec_id, "dismissed")
-                                    st.cache_data.clear()
+                            else:
+                                if st.button("⏰ Snooze 7d", key=f"wp_snz_{_wp_id}"):
+                                    st.session_state[_wp_act_key] = "snooze"
                                     st.rerun()
-                            elif _rec_status == "dismissed":
-                                if st.button("↩ Undo snooze", key=f"undo_{_rec_id}"):
-                                    update_recommendation_status(_rec_id, "pending")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                        with _rc[2]:
-                            if st.button("→ Send to merchandising", key=f"mrc_{_rec_id}"):
-                                st.toast("Sent to merchandising team")
-                        with _rc[3]:
-                            if st.button("○ Watch this pattern", key=f"wch_{_rec_id}"):
-                                st.toast("Added to watchlist")
-                        with _rc[4]:
-                            if st.button("↗ View on Predictive", key=f"vop_{_rec_id}"):
-                                st.query_params["view"] = "predictive"
+                        with _wpc[1]:
+                            if st.button("✕ Remove", key=f"wp_rm_{_wp_id}"):
+                                st.session_state[_wp_act_key] = "remove"
                                 st.rerun()
+
+                _render_wp_section(_active_wp, "Watching", is_snoozed_section=False)
+                _render_wp_section(_snoozed_wp, "Snoozed", is_snoozed_section=True)
 
             st.html('</div></div>')
 
@@ -5408,90 +5804,97 @@ if main_view == "askrec":
                 "Which Nordstrom-only patterns should I watch?",
                 "What's the median price gap between Amazon and Nordstrom?",
             ]
-            for key, default in {
-                "chat2_session_id": str(uuid.uuid4()),
-                "chat2_messages": [],
-            }.items():
-                st.session_state.setdefault(key, default)
 
-            _orch, _chatbot_err = _get_chatbot()
+            _orch, _chatbot_err = _get_chatbot("v9")
             if _chatbot_err:
                 st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
 
-            st.html(_s3_ask_input_html(ASK_CHIPS))
-            _ask_cols = st.columns([5.8, 0.75, 0.7])
-            with _ask_cols[0]:
-                typed_q = st.text_input(
-                    "ask_inline_q",
-                    placeholder="e.g., Which pattern has the strongest cross-channel premium?",
-                    key="ask_inline_q",
-                    label_visibility="collapsed",
-                )
-            with _ask_cols[1]:
-                send_ask = st.button("Send", type="primary", key="ask_inline_send", use_container_width=True)
-            with _ask_cols[2]:
-                if st.button("Clear", key="ask_inline_clear", use_container_width=True):
-                    if _orch:
-                        _orch.clear_session(st.session_state["chat2_session_id"])
-                    st.session_state["chat2_messages"] = []
-                    st.session_state["chat2_session_id"] = str(uuid.uuid4())
-                    st.rerun()
+            st.html(_s3_ask_input_html())
 
-            if send_ask and typed_q.strip() and not _chatbot_err:
-                st.session_state["chat2_messages"].append({"role": "user", "content": typed_q.strip()})
-                result = _orch.process_question(
-                    session_id=st.session_state["chat2_session_id"],
-                    question=typed_q.strip(),
-                )
-                response = result.get("response") or "Unable to process the request."
-                st.session_state["chat2_messages"].append({"role": "assistant", "content": response})
-                st.rerun()
+            _ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
+            _default_answer = (
+                f"Your current filter has {_total_skus:,} SKUs and {_total_reviews:,} reviews. "
+                f"The strongest live signal is {_label(_ctx_t3.get('rising_attr'), 'marketplace momentum')}; "
+                f"the converting price band is {_ctx_t3.get('band_label')}. Ask a question above and I will answer from the database-backed chatbot."
+            )
 
-            _chip_cols = st.columns(len(ASK_CHIPS))
-            for chip_idx, chip_q in enumerate(ASK_CHIPS):
-                if _chip_cols[chip_idx].button(chip_q[:28] + ("..." if len(chip_q) > 28 else ""), key=f"ask_chip_{chip_idx}", use_container_width=True, help=chip_q):
-                    st.session_state["chat2_messages"].append({"role": "user", "content": chip_q})
-                    if not _chatbot_err:
-                        result = _orch.process_question(
-                            session_id=st.session_state["chat2_session_id"],
-                            question=chip_q,
-                        )
-                        response = result.get("response") or "Unable to process the request."
-                    else:
-                        response = "Chatbot is unavailable because the DB or LLM connection is not ready."
+            @st.fragment
+            def _ask_chat(orch, chatbot_err, chips, default_answer):
+                for key, default in {
+                    "chat2_session_id": str(uuid.uuid4()),
+                    "chat2_messages": [],
+                }.items():
+                    st.session_state.setdefault(key, default)
+
+                _ask_cols = st.columns([5.8, 0.75, 0.7])
+                with _ask_cols[0]:
+                    typed_q = st.text_input(
+                        "ask_inline_q",
+                        placeholder="e.g., Which pattern has the strongest cross-channel premium?",
+                        key="ask_inline_q",
+                        label_visibility="collapsed",
+                    )
+                with _ask_cols[1]:
+                    send_ask = st.button("Send", type="primary", key="ask_inline_send", width="stretch")
+                with _ask_cols[2]:
+                    if st.button("Clear", key="ask_inline_clear", width="stretch"):
+                        if orch:
+                            orch.clear_session(st.session_state["chat2_session_id"])
+                        st.session_state["chat2_messages"] = []
+                        st.session_state["chat2_session_id"] = str(uuid.uuid4())
+                        st.rerun()
+
+                if send_ask and typed_q.strip() and not chatbot_err:
+                    st.session_state["chat2_messages"].append({"role": "user", "content": typed_q.strip()})
+                    result = orch.process_question(
+                        session_id=st.session_state["chat2_session_id"],
+                        question=typed_q.strip(),
+                    )
+                    response = result.get("response") or "Unable to process the request."
                     st.session_state["chat2_messages"].append({"role": "assistant", "content": response})
                     st.rerun()
 
-            exchanges = []
-            messages = st.session_state.get("chat2_messages", [])
-            i = 0
-            while i < len(messages):
-                msg = messages[i]
-                if msg.get("role") == "user":
-                    answer = ""
-                    if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
-                        answer = messages[i + 1].get("content", "")
-                        i += 2
+                _chip_cols = st.columns(len(chips))
+                for chip_idx, chip_q in enumerate(chips):
+                    if _chip_cols[chip_idx].button(chip_q, key=f"ask_chip_{chip_idx}", width="stretch"):
+                        st.session_state["chat2_messages"].append({"role": "user", "content": chip_q})
+                        if not chatbot_err:
+                            result = orch.process_question(
+                                session_id=st.session_state["chat2_session_id"],
+                                question=chip_q,
+                            )
+                            response = result.get("response") or "Unable to process the request."
+                        else:
+                            response = "Chatbot is unavailable because the DB or LLM connection is not ready."
+                        st.session_state["chat2_messages"].append({"role": "assistant", "content": response})
+                        st.rerun()
+
+                exchanges = []
+                messages = st.session_state.get("chat2_messages", [])
+                i = 0
+                while i < len(messages):
+                    msg = messages[i]
+                    if msg.get("role") == "user":
+                        answer = ""
+                        if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
+                            answer = messages[i + 1].get("content", "")
+                            i += 2
+                        else:
+                            i += 1
+                        exchanges.append(_s3_exchange_html(msg.get("content", ""), answer or "Thinking...", 84))
                     else:
                         i += 1
-                    exchanges.append(_s3_exchange_html(msg.get("content", ""), answer or "Thinking...", 84))
-                else:
-                    i += 1
 
-            if not exchanges:
-                ctx_t3 = _market_signal_context(df, sku_df, trend_scores_df_t3)
-                default_answer = (
-                    f"Your current filter has {_total_skus:,} SKUs and {_total_reviews:,} reviews. "
-                    f"The strongest live signal is {_label(ctx_t3.get('rising_attr'), 'marketplace momentum')}; "
-                    f"the converting price band is {ctx_t3.get('band_label')}. Ask a question above and I will answer from the database-backed chatbot."
+                if not exchanges:
+                    exchanges.append(_s3_exchange_html("What is active in this filter context?", default_answer, 82))
+
+                st.html(
+                    '<div class="canvas"><div class="ask-view active"><div class="ask-conversation">'
+                    + "".join(exchanges)
+                    + "</div></div></div>"
                 )
-                exchanges.append(_s3_exchange_html("What is active in this filter context?", default_answer, 82))
 
-            st.html(
-                '<div class="canvas"><div class="ask-view active"><div class="ask-conversation">'
-                + "".join(exchanges)
-                + "</div></div></div>"
-            )
+            _ask_chat(_orch, _chatbot_err, ASK_CHIPS, _default_answer)
 
         st.html(f"""
 <div class="automation-strip">

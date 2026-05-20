@@ -291,3 +291,40 @@ class ProductReviewSnapshot(Base):
 
     def __repr__(self):
         return f"<ProductReviewSnapshot product={self.product_id} rating={self.rating_avg} at={self.scraped_at}>"
+
+
+class WatchedPattern(Base):
+    __tablename__ = "watched_patterns"
+    id           = Column(Integer,      primary_key=True, index=True)
+    rec_id       = Column(Integer,      ForeignKey("recommendations.rec_id", ondelete="SET NULL"), nullable=True, index=True)
+    pattern_name = Column(String(500),  nullable=False)
+    attr_key     = Column(String(100),  nullable=True)
+    category     = Column(String(100),  nullable=True)
+    platform     = Column(String(200),  nullable=True)
+    stage        = Column(String(50),   nullable=True)
+    change_pct   = Column(Numeric(8, 2), nullable=True)
+    confidence   = Column(String(20),   nullable=True)
+    action       = Column(Text,         nullable=True)
+    note         = Column(Text,         nullable=True)
+    watched_at   = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    snoozed_until = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return f"<WatchedPattern {self.pattern_name[:40]} rec={self.rec_id}>"
+
+
+class GoogleTrendSnapshot(Base):
+    __tablename__ = "google_trend_snapshots"
+    id          = Column(Integer,     primary_key=True, index=True)
+    query       = Column(String(500), nullable=False, index=True)
+    geo         = Column(String(10),  nullable=False, default="US")
+    date_window = Column(String(50),  nullable=False, default="today 3-m")
+    score       = Column(Integer,     nullable=True)
+    delta_pct   = Column(Integer,     nullable=True)
+    points      = Column(Integer,     nullable=True)
+    category    = Column(String(100), nullable=True)
+    platform    = Column(String(100), nullable=True)
+    fetched_at  = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+    def __repr__(self):
+        return f"<GoogleTrendSnapshot query={self.query[:40]} delta={self.delta_pct}% at={self.fetched_at}>"
