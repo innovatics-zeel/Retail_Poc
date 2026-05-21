@@ -2173,38 +2173,40 @@ _category_opts = ["All"] + _fopts.get("categories", ["mens_tshirts", "womens_dre
 _neck_type_opts = ["All"] + _fopts.get("neck_types", [])
 _platform_opts = ["All"] + _fopts.get("platforms", ["amazon", "nordstrom"])
 
-# ── SKU Lookup dialog ─────────────────────────────────────────────────────────
-@st.dialog("SKU Lookup", width="large")
-def _sku_lookup_dialog():
-    st.markdown("""
-<div class="sku-modal-header">
-  <div class="sku-modal-title">🔍 SKU Lookup</div>
+# ── SKU Lookup inline panel (st.dialog not available in Streamlit 1.35) ───────
+def _sku_lookup_panel():
+    with st.container():
+        st.markdown("""
+<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px 16px;margin:8px 0 16px;">
+  <div style="font-weight:700;font-size:15px;color:#0f172a;margin-bottom:12px;">🔍 SKU Lookup</div>
+""", unsafe_allow_html=True)
+        _q_col, _btn_col, _close_col = st.columns([5, 1, 0.6])
+        with _q_col:
+            _sku_q = st.text_input("sku_q", placeholder="e.g., B08L5XYZ12 (Amazon ASIN) or 7234890 (Nordstrom ID)",
+                                   label_visibility="collapsed", key="sku_lookup_input")
+        with _btn_col:
+            _do_lookup = st.button("Look up", type="primary", width="stretch", key="sku_lookup_go")
+        with _close_col:
+            if st.button("✕ Close", key="sku_lookup_close", width="stretch"):
+                st.session_state["show_sku_lookup"] = False
+                st.rerun()
+        st.markdown("""
+<div style="display:flex;gap:8px;align-items:center;margin:8px 0 12px;flex-wrap:wrap;">
+  <span style="font-size:11px;color:#94a3b8;">TRY</span>
+  <span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;cursor:pointer;color:#334155;">B08HVCWRC1 · Amazon</span>
+  <span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;cursor:pointer;color:#334155;">7234890 · Nordstrom</span>
+  <span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;cursor:pointer;color:#334155;">B07PFGX5LL · Amazon</span>
 </div>
 """, unsafe_allow_html=True)
-    st.markdown('<div class="sku-modal-label">Enter a marketplace SKU or ASIN</div>', unsafe_allow_html=True)
-    _q_col, _btn_col = st.columns([5, 1])
-    with _q_col:
-        _sku_q = st.text_input("sku_q", placeholder="e.g., B08L5XYZ12 (Amazon ASIN) or 7234890 (Nordstrom ID)",
-                               label_visibility="collapsed", key="sku_lookup_input")
-    with _btn_col:
-        _do_lookup = st.button("Look up", type="primary", width="stretch", key="sku_lookup_go")
-    st.markdown("""
-<div class="sku-try-row">
-  <span style="font-size:11px;color:#94a3b8;align-self:center;">TRY</span>
-  <span class="sku-try-chip">B08HVCWRC1 · Amazon</span>
-  <span class="sku-try-chip">7234890 · Nordstrom</span>
-  <span class="sku-try-chip">B07PFGX5LL · Amazon</span>
-</div>
-""", unsafe_allow_html=True)
-    st.divider()
-    if _do_lookup and _sku_q.strip():
-        try:
-            _hit = lookup_sku(_sku_q)
-            if _hit.empty:
-                st.warning(f"No product found matching **{_sku_q}** in the database.")
-            else:
-                r = _hit.iloc[0]
-                st.markdown(f"""
+        st.divider()
+        if _do_lookup and _sku_q.strip():
+            try:
+                _hit = lookup_sku(_sku_q)
+                if _hit.empty:
+                    st.warning(f"No product found matching **{_sku_q}** in the database.")
+                else:
+                    r = _hit.iloc[0]
+                    st.markdown(f"""
 <div class="sku-result-card">
   <div style="font-weight:700;font-size:14px;margin-bottom:4px;">{r.get('title','—')[:80]}</div>
   <div style="font-size:12px;color:#475569;margin-bottom:10px;">
@@ -2215,16 +2217,15 @@ def _sku_lookup_dialog():
   </div>
   <div style="font-size:11.5px;color:#64748b;">Category: {r.get('category','—')} &nbsp;·&nbsp; Color: {r.get('color','—')} &nbsp;·&nbsp; Neck: {r.get('neck_type','—')}</div>
 </div>""", unsafe_allow_html=True)
-        except Exception as _e:
-            st.error(f"Lookup error: {_e}")
-    else:
-        st.markdown("""
-<div class="sku-empty-state">
-  <span class="sku-empty-icon">🔍</span>
-  <div class="sku-empty-text">Enter an ASIN or Nordstrom product ID above to see review metrics,
-  sentiment, price history, cross-platform comparison, and pattern mapping for that listing.<br><br>
-  <span style="color:#b0bdcd;">All data is market-derived from public listings.</span></div>
+            except Exception as _e:
+                st.error(f"Lookup error: {_e}")
+        else:
+            st.markdown("""
+<div style="text-align:center;padding:24px 0 8px;color:#94a3b8;font-size:13px;">
+  Enter an ASIN or Nordstrom product ID above to see review metrics,
+  sentiment, price history, cross-platform comparison, and pattern mapping.
 </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ── App Chrome (dark gradient header) ────────────────────────────────────────
 def _query_href(**params) -> str:
@@ -2338,7 +2339,8 @@ with st.container(key="filter_area", gap="small"):
         st.markdown('<div class="filter-divider-v"></div>', unsafe_allow_html=True)
     with _r1[5]:
         if st.button("🔍 Look up SKU", key="sku_open_btn", width="stretch"):
-            _sku_lookup_dialog()
+            st.session_state["show_sku_lookup"] = not st.session_state.get("show_sku_lookup", False)
+            st.rerun()
     with _r1[6]:
         if st.button("↗ Save view", key="save_view_btn", width="stretch", help="Save current filter as default"):
             st.session_state["saved_view"] = {
@@ -2381,6 +2383,10 @@ with st.container(key="filter_area", gap="small"):
             key="plt_filter",
             label_visibility="collapsed",
         )
+
+# ── SKU Lookup inline panel (shown below filter bar when toggled) ─────────────
+if st.session_state.get("show_sku_lookup", False):
+    _sku_lookup_panel()
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -2476,19 +2482,33 @@ def _money(value) -> str:
 
 # ── Chatbot helpers (Layer 02) ────────────────────────────────────────────────
 
+def _chatbot_file_hash() -> str:
+    """Hash all chatbot source files — cache busts automatically on any file change."""
+    import hashlib as _hl
+    import glob as _glob
+    h = _hl.md5()
+    for f in sorted(_glob.glob(os.path.join(_CHATBOT_DIR, "**", "*.py"), recursive=True)):
+        try:
+            h.update(open(f, "rb").read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
 @st.cache_resource(show_spinner=False, max_entries=1)
 def _get_chatbot(_cache_key: str = "v1"):
-    """Import and initialise the RAG orchestrator once. Change _cache_key to force reload."""
+    """Import and initialise the RAG orchestrator. Cache key includes file hash — auto-reloads on any code change."""
     import sys as _sys
-    _chatbot_mods = [
-        "orchestrator", "intent_agent", "tool_manager", "llm_config",
-        "embedding_manager", "db",
-        "tools.sql_agent", "tools.trend_agent", "tools.vector_agent",
-        "tools.hybrid_agent", "tools.fallback_agent",
-        "utils.history", "utils.redis_cache",
-    ]
-    for _m in _chatbot_mods:
+
+    # Remove ALL chatbot-related modules so Python re-reads files from disk
+    _to_drop = [k for k in list(_sys.modules.keys()) if any(
+        k == m or k.startswith(m + ".")
+        for m in ["orchestrator", "intent_agent", "tool_manager", "llm_config",
+                  "embedding_manager", "db", "tools", "utils"]
+    )]
+    for _m in _to_drop:
         _sys.modules.pop(_m, None)
+
     try:
         from orchestrator import orchestrator as _orch
         from embedding_manager import setup_table
@@ -5384,7 +5404,7 @@ def _markdown_table_to_html(lines: list[str]) -> str:
             # Strip markdown bold markers from cell content before rendering
             clean = re.sub(r"\*\*([^*]*)\*\*", r"\1", c).strip()
             cls = ""
-            if re.match(r"^\+\d+(\.\d+)?%?$", clean):
+            if re.match(r"^\+?0\.\d+$", clean) or re.match(r"^\+[1-9]\d*(\.\d+)?$", clean):
                 cls = ' class="vel-up"'
             elif re.match(r"^-\d+(\.\d+)?%?$", clean):
                 cls = ' class="vel-down"'
@@ -5461,7 +5481,7 @@ def _s3_exchange_html(question: str, answer: str, confidence: int = 84) -> str:
 
 
 if main_view == "askrec":
-    if df.empty:
+    if False:  # df.empty guard disabled for UI dev — re-enable before production
         st.info("No data yet. Run the scraper first.")
     else:
         trend_scores_df_t3 = load_trend_scores(
@@ -5805,7 +5825,7 @@ if main_view == "askrec":
                 "What's the median price gap between Amazon and Nordstrom?",
             ]
 
-            _orch, _chatbot_err = _get_chatbot("v9")
+            _orch, _chatbot_err = _get_chatbot(_chatbot_file_hash())
             if _chatbot_err:
                 st.error(f"Chatbot unavailable — check GROQ_API_KEY and DB connection. ({_chatbot_err})")
 

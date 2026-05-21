@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -172,18 +173,20 @@ WHERE pv.price IS NOT NULL
 GROUP BY pl.name
 ORDER BY pl.name;
 
--- Mark-down candidates: available, high price, fewest reviews
+-- Mark-down candidates: zero reviews, highest price first
+-- IMPORTANT: every product has a review row — zero-review means r.review_count = 0, NOT NULL.
+-- Use INNER JOIN reviews (not LEFT JOIN) and filter WHERE r.review_count = 0.
 SELECT p.title, pl.name AS platform,
        MIN(pv.price) AS min_price,
-       COALESCE(r.review_count, 0) AS review_count,
-       ROUND(r.rating_avg::numeric, 2) AS rating
+       r.review_count
 FROM products p
 JOIN platforms pl ON p.platform_id = pl.id
 JOIN product_variants pv ON p.product_id = pv.product_id
-LEFT JOIN reviews r ON p.product_id = r.product_id
-WHERE pv.is_available = TRUE AND pv.price IS NOT NULL
-GROUP BY p.product_id, p.title, pl.name, r.review_count, r.rating_avg
-ORDER BY review_count ASC NULLS FIRST, min_price DESC
+JOIN reviews r ON p.product_id = r.product_id
+WHERE pv.price IS NOT NULL
+  AND r.review_count = 0
+GROUP BY p.product_id, p.title, pl.name, r.review_count
+ORDER BY min_price DESC
 LIMIT 15;
 
 -- Nordstrom-only attributes using trend_scores
@@ -221,7 +224,7 @@ OUTPUT FORMAT:
 3. One sentence business recommendation with the most important number bolded.
 
 TABLE RULES:
-- 2–5 rows based on what makes sense. Never exceed 5. Don't pad with irrelevant rows.
+- MAXIMUM 5 rows. Hard limit — stop at 5 even if there are 50 results. For 2-platform comparisons use 2 rows.
 - Use business-friendly headers: platform→CHANNEL, min_price/median_price→PRICE, title→PRODUCT, rating_avg→RATING.
 - Plain text only inside table cells — no ** bold ** markers inside cells.
 - Only include columns that vary meaningfully across rows. Drop constant columns and mention them in the recommendation instead.
@@ -304,11 +307,11 @@ def _execute_sql(query: str) -> list[dict]:
 
 def _build_response(question: str, data: list[dict], chat_history: list) -> str:
     history_ctx = format_history_for_prompt(chat_history, max_messages=2)
-    display = data[:15]
+    display = data[:5]  # Hard-cap: LLM only sees 5 rows, so it can only show 5
     prompt = (
         f"{history_ctx}"
         f"Question:\n{question}\n\n"
-        f"SQL Result ({len(data)} rows, showing {len(display)}):\n"
+        f"SQL Result ({len(data)} total rows, showing top {len(display)}):\n"
         f"{json.dumps(display, default=str)}"
     )
     return llm.generate_response(
@@ -318,9 +321,51 @@ def _build_response(question: str, data: list[dict], chat_history: list) -> str:
     )
 
 
+_QUERY_MARKDOWN = """
+SELECT p.title, pl.name AS platform, MIN(pv.price) AS min_price, r.review_count
+FROM products p
+JOIN platforms pl ON p.platform_id = pl.id
+JOIN product_variants pv ON p.product_id = pv.product_id
+JOIN reviews r ON p.product_id = r.product_id
+WHERE pv.price IS NOT NULL AND r.review_count = 0
+GROUP BY p.product_id, p.title, pl.name, r.review_count
+ORDER BY min_price DESC
+LIMIT 15
+"""
+
+_QUERY_PRICE_GAP = """
+SELECT pl.name AS platform,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pv.price) AS median_price,
+       COUNT(DISTINCT p.product_id) AS product_count
+FROM products p
+JOIN platforms pl ON p.platform_id = pl.id
+JOIN product_variants pv ON p.product_id = pv.product_id
+WHERE pv.price IS NOT NULL
+GROUP BY pl.name
+ORDER BY pl.name
+"""
+
+_MARKDOWN_KEYWORDS = re.compile(
+    r'\b(mark\s?down|markdown|mark-down|zero.review|no.review|discount candidate|slow.moving|overstock)\b',
+    re.I,
+)
+_PRICEGAP_KEYWORDS = re.compile(
+    r'\b(price\s?gap|price\s?diff|median\s?price|cheaper|more expensive|price\s?compar)\b',
+    re.I,
+)
+
+
+def _pick_direct_query(question: str) -> str | None:
+    if _MARKDOWN_KEYWORDS.search(question):
+        return _QUERY_MARKDOWN.strip()
+    if _PRICEGAP_KEYWORDS.search(question):
+        return _QUERY_PRICE_GAP.strip()
+    return None
+
+
 def run_sql_agent(question: str, intent_response: dict, chat_history: list) -> dict:
     try:
-        query = _generate_sql(question, chat_history)
+        query = _pick_direct_query(question) or _generate_sql(question, chat_history)
 
         if not _validate_sql(query):
             return {

@@ -13,13 +13,10 @@ from dotenv import load_dotenv
 
 from llm_config import llm
 from tools.sql_agent import _generate_sql, _validate_sql, _execute_sql
-from tools.vector_agent import _search_similar_chunks, _average_similarity
+from tools.vector_agent import _fetch_review_data
 from utils.history import format_history_for_prompt
 
 load_dotenv()
-
-_TOP_K_HYBRID = int(os.getenv("HYBRID_TOP_K", 3))
-_MIN_SIM_HYBRID = float(os.getenv("HYBRID_MIN_SIMILARITY", 0.20))
 
 _HYBRID_SYSTEM_PROMPT = """
 You are a fashion retail analytics assistant that combines structured product data
@@ -50,18 +47,14 @@ def _build_combined_response(
 
     history_ctx = format_history_for_prompt(chat_history, max_messages=2)
 
-    display_sql = sql_data[:15]
+    display_sql = sql_data[:5]
     sql_section = (
         json.dumps(display_sql, default=str)
         if display_sql else "No structured product data available."
     )
 
     if vector_chunks:
-        review_parts = [
-            f"[Review {i} | similarity={c['similarity']:.2%}]\n{c['review_text']}"
-            for i, c in enumerate(vector_chunks, 1)
-        ]
-        review_section = "\n\n".join(review_parts)
+        review_section = json.dumps(vector_chunks[:5], default=str)
     else:
         review_section = "No customer review data available."
 
@@ -106,15 +99,9 @@ def run_hybrid_agent(
 
     vector_chunks: list[dict] = []
     try:
-        vector_chunks = _search_similar_chunks(
-            question=question,
-            top_k=_TOP_K_HYBRID,
-            min_similarity=_MIN_SIM_HYBRID,
-        )
+        vector_chunks = _fetch_review_data(question)
     except Exception as exc:
-        # Silently skip if embeddings table doesn't exist yet
-        if "does not exist" not in str(exc) and "relation" not in str(exc).lower():
-            print(f"[hybrid_agent] Vector component failed: {exc}")
+        print(f"[hybrid_agent] Review component failed: {exc}")
 
     if not sql_success and not vector_chunks:
         return {
@@ -140,8 +127,7 @@ def run_hybrid_agent(
         }
 
     sql_confidence = float(intent_response.get("confidence", 0.5)) if sql_success else 0.0
-    vec_confidence = _average_similarity(vector_chunks) if vector_chunks else 0.0
-    confidence = round(max(sql_confidence, vec_confidence), 4)
+    confidence = round(sql_confidence, 4)
 
     response = _build_combined_response(
         question=question,

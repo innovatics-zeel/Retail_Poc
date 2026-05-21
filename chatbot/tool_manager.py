@@ -1,4 +1,5 @@
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -13,6 +14,23 @@ load_dotenv()
 _CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.75))
 _REPEAT_QUESTION_THRESHOLD = int(os.getenv("REPEAT_QUESTION_THRESHOLD", 2))
 
+# Hard keyword overrides — bypass LLM intent classification for known patterns
+_SQL_OVERRIDE = re.compile(
+    r'\b(mark\s?down|markdown|mark-down|zero.review|no.review|discount candidate|'
+    r'slow.moving|overstock|price\s?gap|price\s?diff|median\s?price|price\s?compar|'
+    r'whitespace|underserved|which stock|top.rated|best.rated|highest.rated|'
+    r'most expensive|cheapest|lowest price)\b',
+    re.I,
+)
+_TREND_OVERRIDE = re.compile(
+    r'\b(trending|trend|momentum|rising|declining|fastest|lifecycle|velocity|'
+    r'cross.channel|pattern.*channel|channel.*pattern|'
+    r'outperform|doing better|perform better|gaining|losing momentum|'
+    r'both channel|both platform|amazon.*nordstrom|nordstrom.*amazon|'
+    r'color.*trend|sleeve.*trend|neck.*trend|fit.*trend|fabric.*trend|material.*trend)\b',
+    re.I,
+)
+
 
 def execute_tool(
     question: str,
@@ -25,7 +43,13 @@ def execute_tool(
         confidence = float(intent_response.get("confidence", 0))
         force_execute = repeated_question_count >= _REPEAT_QUESTION_THRESHOLD
 
-        if confidence < _CONFIDENCE_THRESHOLD and not force_execute:
+        # Python-level overrides — SQL check first, then trend (trend overrides LLM if matched)
+        if _SQL_OVERRIDE.search(question):
+            selected_agent = "sql_agent"
+        elif _TREND_OVERRIDE.search(question):
+            selected_agent = "trend_engine_agent"
+
+        if confidence < _CONFIDENCE_THRESHOLD and not force_execute and selected_agent == "fallback":
             return run_fallback_agent(question=question, reason="low_confidence")
 
         if selected_agent == "sql_agent":

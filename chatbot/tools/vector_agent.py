@@ -1,4 +1,6 @@
+import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -6,104 +8,88 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 from db import get_connection
-from embedding_manager import embed_query, _TABLE
 from llm_config import llm
 from utils.history import format_history_for_prompt
 
 load_dotenv()
 
-_TOP_K = int(os.getenv("TOP_K_RESULTS", 5))
-_MIN_SIMILARITY = float(os.getenv("VECTOR_MIN_SIMILARITY", 0.30))
+_REVIEW_SYSTEM_PROMPT = """
+You are a fashion retail analyst interpreting customer review data.
 
-_VECTOR_SYSTEM_PROMPT = """
-You are a fashion review intelligence assistant.
-
-Directly answer the user's specific question using only the retrieved customer review context.
-Do NOT follow a fixed structure — answer what was actually asked.
+You have structured review data with: product title, platform, rating_avg, review_count,
+and star distribution (stars_1_pct through stars_5_pct as percentages).
 
 Rules:
-1. Answer the question directly in the first sentence.
-2. Only use information present in the retrieved review context.
-3. Never invent customer opinions, ratings, or product details.
-4. Be concise — under 100 words unless the question needs more detail.
-5. Use the conversation context to make your answer feel like a natural continuation.
+1. Answer the specific question directly in the first sentence.
+2. Use stars_1_pct + stars_2_pct as the complaint/dissatisfaction signal.
+3. Use stars_4_pct + stars_5_pct as the satisfaction signal.
+4. Reference specific products and numbers from the data.
+5. Be concise — under 80 words unless more detail is needed.
+6. Never invent opinions or review text — only use the star distribution data.
 """.strip()
 
+_CATEGORY_MAP = {
+    re.compile(r"\b(men|mens|men's|t-shirt|tshirt)\b", re.I): "mens_tshirts",
+    re.compile(r"\b(women|womens|women's|dress|gown)\b", re.I): "womens_dresses",
+}
 
-def _search_similar_chunks(question: str, top_k: int, min_similarity: float) -> list[dict]:
-    query_vec = embed_query(question)
-    vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
+_PLATFORM_MAP = {
+    re.compile(r"\bamazon\b", re.I): "amazon",
+    re.compile(r"\bnordstrom\b", re.I): "nordstrom",
+}
 
-    sql = f"""
-    SELECT product_id, chunk_type, review_text, similarity
-    FROM (
-        SELECT
-            product_id,
-            chunk_type,
-            review_text,
-            1 - (embedding <=> %s::vector) AS similarity
-        FROM {_TABLE}
-    ) ranked
-    WHERE similarity >= %s
-    ORDER BY similarity DESC
-    LIMIT %s
+
+def _detect_category(question: str) -> str | None:
+    for pattern, cat in _CATEGORY_MAP.items():
+        if pattern.search(question):
+            return cat
+    return None
+
+
+def _detect_platform(question: str) -> str | None:
+    for pattern, plat in _PLATFORM_MAP.items():
+        if pattern.search(question):
+            return plat
+    return None
+
+
+def _fetch_review_data(question: str) -> list[dict]:
+    category = _detect_category(question)
+    platform = _detect_platform(question)
+
+    filters = ["r.review_count > 0", "r.stars_1_pct IS NOT NULL"]
+    params: list = []
+
+    if category:
+        filters.append("c.name = %s")
+        params.append(category)
+    if platform:
+        filters.append("pl.name = %s")
+        params.append(platform)
+
+    where = " AND ".join(filters)
+
+    # Sort by complaint rate (1+2 star %) to surface most-complained products
+    query = f"""
+        SELECT p.title, pl.name AS platform, c.name AS category,
+               r.rating_avg, r.review_count,
+               r.stars_1_pct, r.stars_2_pct, r.stars_3_pct,
+               r.stars_4_pct, r.stars_5_pct
+        FROM reviews r
+        JOIN products p ON r.product_id = p.product_id
+        JOIN platforms pl ON p.platform_id = pl.id
+        JOIN categories c ON p.category_id = c.category_id
+        WHERE {where}
+        ORDER BY (COALESCE(r.stars_1_pct, 0) + COALESCE(r.stars_2_pct, 0)) DESC,
+                 r.review_count DESC
+        LIMIT 10
     """
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (vec_str, min_similarity, top_k))
-            rows = cur.fetchall()
-
-    return [
-        {
-            "product_id": row[0],
-            "chunk_type": row[1],
-            "review_text": row[2],
-            "similarity": round(float(row[3]), 4),
-        }
-        for row in rows
-    ]
-
-
-def _build_review_summary(
-    question: str,
-    chunks: list[dict],
-    chat_history: list,
-) -> str:
-    history_ctx = format_history_for_prompt(chat_history, max_messages=2)
-
-    context_parts = []
-    for i, chunk in enumerate(chunks, 1):
-        context_parts.append(
-            f"[Chunk {i} | type={chunk['chunk_type']} | similarity={chunk['similarity']:.2%}]\n"
-            f"{chunk['review_text']}"
-        )
-    review_context = "\n\n---\n\n".join(context_parts)
-
-    prompt = (
-        f"{history_ctx}"
-        f"Current question:\n{question}\n\n"
-        f"Retrieved Review Context:\n{review_context}"
-    )
-
-    return llm.generate_response(
-        system_prompt=_VECTOR_SYSTEM_PROMPT,
-        user_prompt=prompt,
-        temperature=0,
-    )
-
-
-def _average_similarity(chunks: list[dict]) -> float:
-    if not chunks:
-        return 0.0
-    return round(sum(c["similarity"] for c in chunks) / len(chunks), 4)
-
-
-_TABLE_NOT_FOUND_MSG = (
-    "Customer review intelligence isn't available yet — "
-    "the review embeddings index hasn't been built. "
-    "Try asking about products, prices, or trends instead."
-)
+            cur.execute(query, params)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
 def run_vector_agent(
@@ -112,50 +98,45 @@ def run_vector_agent(
     chat_history: list,
 ) -> dict:
     try:
-        chunks = _search_similar_chunks(
-            question=question,
-            top_k=_TOP_K,
-            min_similarity=_MIN_SIMILARITY,
-        )
+        data = _fetch_review_data(question)
 
-        if not chunks:
+        if not data:
             return {
                 "success": False,
                 "confidence": 0.0,
                 "source": "vector_agent",
-                "response": (
-                    "No sufficiently similar reviews were found for your question. "
-                    "Try rephrasing or asking about a specific product attribute."
-                ),
+                "response": "No review data found for that query. Try asking about men's t-shirts or women's dresses.",
             }
 
-        confidence = _average_similarity(chunks)
-        response = _build_review_summary(
-            question=question,
-            chunks=chunks,
-            chat_history=chat_history,
+        history_ctx = format_history_for_prompt(chat_history, max_messages=2)
+        prompt = (
+            f"{history_ctx}"
+            f"Question: {question}\n\n"
+            f"Review data (star percentages show customer satisfaction distribution):\n"
+            f"{json.dumps(data[:5], default=str)}"
         )
+
+        response = llm.generate_response(
+            system_prompt=_REVIEW_SYSTEM_PROMPT,
+            user_prompt=prompt,
+            temperature=0,
+        )
+
+        avg_rating = sum(float(r.get("rating_avg") or 0) for r in data) / len(data)
+        confidence = min(0.9, 0.5 + (avg_rating - 3.0) * 0.1)
 
         return {
             "success": True,
-            "confidence": confidence,
+            "confidence": round(confidence, 2),
             "source": "vector_agent",
-            "data": chunks,
+            "data": data,
             "response": response,
         }
 
     except Exception as exc:
-        msg = str(exc)
-        if "does not exist" in msg or "relation" in msg.lower():
-            return {
-                "success": False,
-                "confidence": 0.0,
-                "source": "vector_agent",
-                "response": _TABLE_NOT_FOUND_MSG,
-            }
         return {
             "success": False,
             "confidence": 0.0,
             "source": "vector_agent",
-            "response": f"Review search failed: {exc}",
+            "response": f"Review analysis failed: {exc}",
         }
