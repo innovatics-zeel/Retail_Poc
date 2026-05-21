@@ -480,6 +480,7 @@ st.markdown(f"""
     .pred-life-avg {{ color:#94a3b8; font-size:11.5px; font-family:var(--font-mono); margin:6px 0 10px; }}
     .pred-life-item {{ padding:7px 0; border-top:1px solid #edf2f6; color:#475569; font-size:12px; }}
     .pred-life-item strong {{ color:var(--ink); }}
+    .pred-life-footer {{ margin-top:8px; font-size:11.5px; color:var(--accent); font-weight:600; }}
     .pred-signal-grid {{ grid-template-columns:repeat(3,1fr); gap:12px; }}
     .pred-signal-card {{ background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }}
     .pred-signal-head {{ padding:14px 16px; border-bottom:1px solid #e2e8f0; }}
@@ -3167,19 +3168,27 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
         work = scores.copy()
         if attr_key and "attr_key" in work.columns:
             work = work[work["attr_key"] == attr_key]
-        sort_col = "review_growth_pct" if "review_growth_pct" in work.columns else "momentum_score"
-        if sort_col in work.columns:
-            work = work.sort_values(sort_col, ascending=False)
-        for _, row in work.head(limit).iterrows():
+        # Build ALL rows first (no head() here) so every lifecycle stage is available
+        for _, row in work.iterrows():
             weeks_observed = int(row.get("weeks_observed") or 0)
             latest_share = float(row.get("latest_week_share") or 0)
             previous_share = float(row.get("previous_week_share") or 0)
+            stage = _stage_key(row.get("lifecycle_stage"))
             if weeks_observed >= 2:
                 change = (latest_share - previous_share) * 100
             else:
-                change = row.get("review_growth_pct")
-                if pd.isna(change):
-                    change = float(row.get("momentum_score") or 0) * 10
+                rgp = row.get("review_growth_pct")
+                rgp_f = float(rgp) if rgp is not None and not pd.isna(rgp) else None
+                if rgp_f is not None and rgp_f < 500:
+                    change = max(-200.0, min(200.0, rgp_f))
+                else:
+                    # 500 sentinel or missing → momentum_score (bounded ±100)
+                    change = float(row.get("momentum_score") or 0) * 100
+
+            # Declining must always show negative velocity
+            if stage == "declining" and float(change) > 0:
+                change = -abs(float(change))
+
             rows.append({
                 "name": str(row.get("attr_value") or row.get("attr_key") or "Signal"),
                 "attr_key": str(row.get("attr_key") or ""),
@@ -3187,15 +3196,46 @@ def _forecast_source(products: pd.DataFrame, scores: pd.DataFrame, attr_key: str
                 "platform": str(row.get("platform") or ""),
                 "change": int(round(float(change))),
                 "confidence": "High" if abs(float(change)) >= 14 else "Med" if abs(float(change)) >= 8 else "Low",
-                "stage": _stage_key(row.get("lifecycle_stage")),
+                "stage": stage,
                 "action": row.get("retailer_action") or "",
                 "lifecycle_explanation": row.get("lifecycle_explanation") or "",
                 "weeks_observed": weeks_observed,
                 "latest_week_share": latest_share,
                 "previous_week_share": previous_share,
             })
-    # TODO: Do not backfill forecasts from current attribute shares; use only prediction outputs.
-    return rows[:limit]
+
+    # Stage-balanced: guarantee all 4 stages appear.
+    # Take top (limit // 4) from each stage, then pad remaining slots from whichever
+    # stage has more items (sorted by |change|), preserving stage display order.
+    _stage_order = {"accelerating": 0, "emerging": 1, "plateau": 2, "declining": 3}
+    per_stage: dict[str, list] = {}
+    for r in rows:
+        per_stage.setdefault(r["stage"], []).append(r)
+    for s in per_stage:
+        per_stage[s].sort(key=lambda r: -abs(float(r.get("change") or 0)))
+
+    slot = max(1, limit // 4)
+    # First pass: guaranteed slots per stage
+    buckets: dict[str, list] = {}
+    for s in ("accelerating", "emerging", "plateau", "declining"):
+        buckets[s] = list((per_stage.get(s) or [])[:slot])
+    used = sum(len(v) for v in buckets.values())
+
+    # Second pass: fill remaining slots in stage order from overflow
+    remaining = limit - used
+    if remaining > 0:
+        for s in ("accelerating", "emerging", "plateau", "declining"):
+            overflow = (per_stage.get(s) or [])[slot:]
+            take = min(remaining, len(overflow))
+            buckets[s].extend(overflow[:take])
+            remaining -= take
+            if remaining <= 0:
+                break
+
+    result = []
+    for s in ("accelerating", "emerging", "plateau", "declining"):
+        result.extend(buckets[s])
+    return result
 
 
 def _confidence_pct(row: dict, agreement: str | None = None) -> int:
@@ -3653,15 +3693,26 @@ def _trajectory_rows_html(
     html = []
     vlookup = velocity_lookup or {}
     for idx, row in enumerate(rows[:6]):
-        change = float(row.get("change") or 0)
+        stage = _stage_key(row.get("stage") or "plateau")
+        raw_change = float(row.get("change") or 0)
+        # Declining must always be negative; Emerging/Accelerating always positive
+        if stage == "declining":
+            change = -abs(raw_change)
+        elif stage in ("emerging", "accelerating"):
+            change = abs(raw_change) if raw_change != 0 else raw_change
+        else:
+            change = raw_change
         row_cat = str(row.get("category") or "")
         row_plat = str(row.get("platform") or "")
         vel = vlookup.get((row_cat, row_plat), {})
         hist_vals = vel.get("hist_vals") or []
         future_vals = vel.get("future_vals") or []
-        proj_chg = vel.get("projected_change_pct")
-        fc4 = int(round(proj_chg * 28 / 30)) if proj_chg is not None else _forecast_value(change, 4)
-        fc8 = int(round(proj_chg * 56 / 30)) if proj_chg is not None else _forecast_value(change, 8)
+        # proj_chg is a category-level aggregate — one number for all patterns in the
+        # category. Applying it to individual patterns gives nonsense (e.g. -93% for
+        # an Accelerating item because the category average is declining).
+        # Always derive the forecast from the pattern's own change value.
+        fc4 = _forecast_value(change, 4)
+        fc8 = _forecast_value(change, 8)
         # Derive agreement from platform_map for confidence calculation
         _ak = str(row.get("attr_key") or "")
         _av = str(row.get("name") or "")
@@ -3722,23 +3773,38 @@ def _trajectory_rows_html(
 
 def _lifecycle_cards_html(rows: list[dict]) -> str:
     stages = ["emerging", "accelerating", "plateau", "declining"]
+    _ctx = {"emerging": "early", "accelerating": "scaling", "plateau": "stable", "declining": "cooling"}
     cards = []
     for stage in stages:
         stage_rows = [r for r in rows if _stage_key(r.get("stage")) == stage]
-        avg = int(round(sum(float(r.get("change") or 0) for r in stage_rows) / max(len(stage_rows), 1)))
-        examples = stage_rows[:3]
-        if not examples:
-            item_html = '<div class="pred-life-item">No backend rows yet</div>'
+        items = stage_rows[:3]
+        total = len(stage_rows)
+
+        # For declining: force change to be negative; for others: use as-is
+        def _disp_change(r, s):
+            v = float(r.get("change") or 0)
+            return -abs(v) if s == "declining" else v
+
+        avg = int(round(sum(_disp_change(r, stage) for r in stage_rows) / max(total, 1)))
+        avg_color = DANGER if avg < 0 else SUCCESS
+
+        if not items:
+            item_html = '<div class="pred-life-item">No data yet</div>'
         else:
             item_html = "".join(
-                f'<div class="pred-life-item"><strong>{_safe(_label(r.get("name"), "Pattern"))}</strong><br><span style="color:{SUCCESS if float(r.get("change") or 0) >= 0 else DANGER};font-weight:900;">{int(round(float(r.get("change") or 0))):+d}%</span> · backend signal</div>'
-                for r in examples
+                f'<div class="pred-life-item">'
+                f'<strong>{_safe(_label(r.get("name"), "Pattern"))}</strong><br>'
+                f'<span style="color:{DANGER if _disp_change(r, stage) < 0 else SUCCESS};font-weight:900;">'
+                f'{int(round(_disp_change(r, stage))):+d}%</span> · velocity signal'
+                f'</div>'
+                for r in items
             )
+        footer = f'<div class="pred-life-footer">See all {total} {stage} patterns →</div>' if total > 3 else ""
         cards.append(f"""
 <div class="pred-life-card {stage}">
-  <div class="pred-life-card-title"><span>{_safe(_LIFECYCLE_LABELS[stage])}</span><span class="pred-life-count">{len(stage_rows)}</span></div>
-  <div class="pred-life-avg">{avg:+d}% avg velocity · selected filter</div>
-  {item_html}
+  <div class="pred-life-card-title"><span>{_safe(_LIFECYCLE_LABELS[stage])}</span><span class="pred-life-count">{total}</span></div>
+  <div class="pred-life-avg"><span style="color:{avg_color};font-weight:700;">{avg:+d}%</span> avg velocity · {_ctx.get(stage, "signal")}</div>
+  {item_html}{footer}
 </div>""")
     return "".join(cards)
 
@@ -4849,7 +4915,7 @@ if main_view == "analytics":
         category=None if category_filter == "All" else category_filter,
         platform=None if platform_filter == "All" else platform_filter,
     )
-    attr_rows_t1 = _forecast_source(df, trend_scores_df, limit=8)
+    attr_rows_t1 = _forecast_source(df, trend_scores_df, limit=40)
     scores_amz_t1 = load_trend_scores(
         category=None if category_filter == "All" else category_filter,
         platform="amazon",
@@ -4934,7 +5000,7 @@ if main_view == "predictive":
             category=None if category_filter == "All" else category_filter,
             platform=None if platform_filter == "All" else platform_filter,
         )
-        attr_rows = _forecast_source(df, trend_scores_df, limit=7)
+        attr_rows = _forecast_source(df, trend_scores_df, limit=40)
         velocity_rows_t2 = load_review_velocity_forecast(
             platform=None if platform_filter == "All" else platform_filter,
             category=None if category_filter == "All" else category_filter,
